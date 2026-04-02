@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+# Sitemap link
+Sitemap: https://stallcart.in/sitemap.xml
