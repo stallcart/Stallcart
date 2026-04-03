@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, query, addDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, query, addDoc, updateDoc, where, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyB1bnXrYuwJQ-prQN1hsPYwr_oR2WwghjU",
@@ -30,7 +30,7 @@ let cart = JSON.parse(localStorage.getItem('stallcart_cart')) || [];
 let activeCat = 'top';
 let activeSubcat = '';
 let searchQuery = '';
-
+let currentSort = 'relevance';
 const updateCartCount = () => {
     const countNodes = document.querySelectorAll('.cart-count');
     countNodes.forEach(n => n.textContent = cart.length);
@@ -190,21 +190,26 @@ const renderOrders = async () => {
     if (!list) return;
     list.innerHTML = '<div style="padding:40px; text-align:center;"><div class="spinner" style="margin:0 auto 15px;"></div><p>Fetching your latest orders...</p></div>';
     try {
-        onSnapshot(query(collection(db, "orders")), (snap) => {
-            const myOrders = snap.docs.map(doc => ({id: doc.id, ...doc.data()})).filter(o => o.userId === user.uid);
+        const q = query(
+            collection(db, "orders"), 
+            where("userId", "==", user.uid)
+        );
+        onSnapshot(q, (snap) => {
+            const myOrders = snap.docs.map(doc => ({id: doc.id, ...doc.data()})).sort((a,b) => new Date(b.orderDate) - new Date(a.orderDate));
             if(myOrders.length === 0) { 
                 list.innerHTML = `
                     <div style="text-align:center; padding:100px 20px;">
-                        <img src="https://rukminim1.flixcart.com/www/800/800/promos/16/05/2019/d405a710-1008-46a1-bb58-534574f015d8.png?q=90" width="180">
+                        <img src="o.png" width="180">
                         <h3 style="margin-top:20px; color:#212121;">No orders found!</h3>
                         <p style="color:#878787; font-size:14px; margin-top:8px;">You haven't placed any orders yet. Start shopping!</p>
                         <button class="view-all" style="margin-top:20px;" onclick="showSection('home')">Shop Now</button>
                     </div>`; 
                 return; 
             }
-            list.innerHTML = myOrders.reverse().map(o => {
-                const orderDate = new Date(o.orderDate);
-                const diffHours = (new Date() - orderDate) / (1000 * 60 * 60);
+            list.innerHTML = myOrders.map(o => {
+                const oDate = o.orderDate ? new Date(o.orderDate) : new Date();
+                const displayDate = oDate.toLocaleDateString(undefined, {year:'numeric', month:'short', day:'numeric'});
+                const diffHours = (new Date() - oDate) / (1000 * 60 * 60);
                 const canCancel = diffHours < 24 && (o.status === 'Ordered' || !o.status);
                 
                 let statusClass = "status-ordered";
@@ -220,43 +225,27 @@ const renderOrders = async () => {
                 <div class="order-item-card shopsy-order-premium">
                     <div class="order-card-header">
                         <div class="order-meta">
-                            <span class="order-id">ORDER ID: #${o.id.substring(0,10).toUpperCase()}</span>
-                            <span class="order-date"><i class="fa fa-calendar-alt"></i> ${new Date(o.orderDate).toLocaleDateString(undefined, {year:'numeric', month:'short', day:'numeric'})}</span>
+                            <span class="order-id">ORDER ID: #${(o.id || 'N/A').substring(0,10).toUpperCase()}</span>
+                            <span class="order-date"><i class="fa fa-calendar-alt"></i> ${displayDate}</span>
                         </div>
                         <div class="order-badge ${statusClass}">
                             <span class="status-dot-large" style="background:${statusDot};"></span>
                             ${statusMsg}
                         </div>
                     </div>
-                    <div class="order-card-body">
-                        <div class="product-thumb-container">
-                            <img src="${o.productImage}" alt="${o.productTitle}" class="order-img">
+                    <div class="order-body">
+                        <img src="${o.productImage || 'A.png'}" class="order-prod-img" onerror="this.src='A.png'">
+                        <div class="order-details-main">
+                            <h4 class="order-title">${o.productTitle || 'Product Details Not Available'}</h4>
+                            <div class="order-pricing">₹${o.productPrice || '0'} | <span class="pay-method-badge">${o.paymentMethod || 'N/A'}</span></div>
+                            <div class="delivery-estimate-order">Expected by ${o.deliveryEstimate || 'Soon'}</div>
+                            ${(o.deliveryOtp && o.status !== 'Delivered' && o.status !== 'Cancelled') ? `<div class="otp-badge-v2">Delivery OTP: <b>${o.deliveryOtp}</b></div>` : ''}
                         </div>
-                        <div class="order-main-info">
-                            <h4 class="order-prod-title">${o.productTitle}</h4>
-                            <div class="order-price-row">₹${o.productPrice} <span class="payment-mode">COD</span></div>
-                            <div class="shipping-to">
-                                <span class="label">Delivering to:</span>
-                                <span class="value">${o.address?.firstName} ${o.address?.lastName} | ${o.address?.city}</span>
-                            </div>
-                            <p class="order-delivery-msg"><i class="fa fa-truck-fast"></i> Expected Arrival: <b>${o.deliveryEstimate || getDeliveryDate()}</b></p>
-                            
-                            ${(o.deliveryOtp && o.status !== 'Delivered' && o.status !== 'Cancelled') ? `
-                                <div class="delivery-security-box">
-                                    <span class="otp-label"><i class="fa fa-shield-check"></i> CONFIRMATION OTP:</span>
-                                    <span class="otp-value">${o.deliveryOtp}</span>
-                                    <p class="otp-hint">Share this code with the delivery boy only at the time of delivery.</p>
-                                </div>
-                            ` : ''}
-
-                            ${o.deliveryBoyName ? `<p style="font-size:11px; margin-top:10px; color:#2874f0;"><b>Delivery Partner:</b> ${o.deliveryBoyName}</p>` : ''}
-                            ${o.status === 'Cancelled' ? '<p class="refund-msg"><i class="fa fa-circle-check"></i> Amount will be refunded to original source within 24-48 Hours</p>' : ''}
-                        </div>
-                        <div class="order-actions">
-                            ${canCancel ? `<button class="premium-cancel-btn" onclick="requestCancellation('${o.id}')">Request Cancellation</button>` : ''}
-                            ${o.status === 'Cancellation Requested' ? '<span class="status-badge-pending">Processing Cancellation...</span>' : ''}
-                            <button class="shopsy-btn-outline" onclick="viewProduct('${o.productId}')">Buy it again</button>
-                        </div>
+                    </div>
+                    <div class="order-actions-bottom">
+                         ${canCancel ? `<button class="order-action-btn cancel-trigger" onclick="requestCancel('${o.id}')">Request Cancellation</button>` : ''}
+                         <button class="order-action-btn" onclick="viewProduct('${o.productId}')">View Product</button>
+                         <button class="order-action-btn help-btn" onclick="alert('Support: stallcart.in@gmail.com')">Need Help?</button>
                     </div>
                 </div>`;
             }).join('');
@@ -301,7 +290,7 @@ const startCheckout = async () => {
         
         if (!isAddressComplete(userData)) {
             hideLoading();
-            alert('Your shipping profile is incomplete. Please fulfill your address details to proceed with order placement.');
+            showToast('Shipping profile incomplete. Please fill address to continue.', "info");
             document.getElementById('profileSetupModal').style.display = 'flex';
             return;
         }
@@ -309,6 +298,11 @@ const startCheckout = async () => {
         showSection('checkout');
         
         // Address Step - Full Details
+        const searchInput = document.getElementById('searchInput');
+        if (searchInput) {
+            searchInput.placeholder = "Search for Products, Brands and More";
+            if (searchInput.value.includes('@')) searchInput.value = ''; 
+        }
         const addrDiv = document.getElementById('checkoutAddress');
         if(userData && userData.address) {
             const addr = userData.address;
@@ -334,11 +328,19 @@ const startCheckout = async () => {
             });
         }
         
+        if(!checkoutItems || checkoutItems.length === 0) {
+            hideLoading();
+            showToast("No items found to checkout.", "error");
+            return;
+        }
+
         // Summary Step
         const summDiv = document.getElementById('checkoutSummary');
+        if(!summDiv) throw new Error("Checkout Summary element not found");
+        
         summDiv.innerHTML = `
             <div class="checkout-summary-container">
-            ${checkoutItems.map(p => {
+            ${checkoutItems.filter(p => p).map(p => {
                 const price = parseFloat(p.price) || 0;
                 const oldPrice = parseFloat(p.oldPrice) || (price * 1.5);
                 return `
@@ -365,10 +367,40 @@ const startCheckout = async () => {
             }).join('')}
             </div>
         `;
+
+        // Update Payment Step Final Amount
+        const total = checkoutItems.reduce((acc, p) => acc + (p ? parseFloat(p.price) : 0), 0);
+        const payFinalAmtElV5 = document.getElementById('payFinalAmountV5');
+        if(payFinalAmtElV5) payFinalAmtElV5.textContent = `₹${total}`;
+
+        // Enforce Login-based Online Payment
+        const onlineOption = document.getElementById('onlinePayOption');
+        if(onlineOption) {
+            if(!user) {
+                onlineOption.style.display = 'none';
+                window.selectedPayMethod = 'COD';
+                window.detailedPayMethod = 'COD';
+            } else {
+                onlineOption.style.display = 'flex';
+                window.selectedPayMethod = 'ONLINE';
+                window.detailedPayMethod = 'UPI / Online';
+            }
+        }
+
+        // V5 Selection Interaction
+        document.querySelectorAll('.pay-method-row').forEach(row => {
+            row.onclick = () => {
+                document.querySelectorAll('.pay-method-row').forEach(r => r.classList.remove('active'));
+                row.classList.add('active');
+                window.selectedPayMethod = row.dataset.method;
+                const titleNode = row.querySelector('.pay-main-title');
+                window.detailedPayMethod = titleNode ? titleNode.textContent.trim() : 'Method';
+            };
+        });
         
     } catch(e) { 
-        console.error(e); 
-        alert("Something went wrong while preparing your checkout.");
+        console.error("Checkout Preparation Error:", e); 
+        showToast("Checkout Error: " + e.message, "error");
     }
     hideLoading();
 };
@@ -377,17 +409,61 @@ document.getElementById('finishOrderBtn')?.addEventListener('click', async () =>
     const user = auth.currentUser;
     if(!user) return;
     
+    const payMethod = window.selectedPayMethod || 'ONLINE';
+    const detailedMethod = window.detailedPayMethod || 'Online';
+    
     showLoading("Finalizing Order...");
     try {
         const docSnap = await getDoc(doc(db, "users", user.uid));
         const userData = docSnap.data();
         
+        let totalAmount = 0;
+        checkoutItems.forEach(p => totalAmount += parseFloat(p.price));
+
+        if (payMethod === 'ONLINE') {
+            hideLoading();
+            // Razorpay Payment Logic
+            const options = {
+                "key": "rzp_live_SYuATabBV5Nnb8",
+                "amount": totalAmount * 100,
+                "currency": "INR",
+                "name": "Stallcart",
+                "description": "Premium Shopping Experience",
+                "image": "logo.png",
+                "handler": async function (response) {
+                    showLoading("Payment Successful! Processing Order...");
+                    await saveOrders(user.uid, userData, `Online (${detailedMethod})`, response.razorpay_payment_id);
+                },
+                "prefill": {
+                    "name": userData.displayName || user.displayName,
+                    "email": user.email,
+                    "contact": userData.phoneNumber || userData.address?.phone || ""
+                },
+                "theme": { "color": "#000000" }
+            };
+            const rzp = new Razorpay(options);
+                rzp.on('payment.failed', function (response) {
+                    showToast("Payment Failed: " + response.error.description, "error");
+                });
+                rzp.open();
+        } else {
+            // Cash on Delivery Logic
+            await saveOrders(user.uid, userData, 'COD (Pending)', 'N/A');
+        }
+    } catch(e) { 
+        hideLoading();
+        showToast('Order Error: ' + e.message, "error"); 
+    }
+});
+
+const saveOrders = async (userId, userData, payMethod, paymentId) => {
+    try {
         for(let p of checkoutItems) {
             const deliveryOtp = Math.floor(100000 + Math.random() * 900000);
             const orderData = {
-                userId: user.uid,
-                userName: userData.displayName || user.displayName,
-                userEmail: user.email,
+                userId: userId,
+                userName: userData.displayName || auth.currentUser.displayName,
+                userEmail: auth.currentUser.email,
                 address: userData.address || {},
                 productId: p.id,
                 productTitle: p.title || p.name,
@@ -396,7 +472,9 @@ document.getElementById('finishOrderBtn')?.addEventListener('click', async () =>
                 orderDate: new Date().toISOString(),
                 status: 'Ordered',
                 deliveryOtp: deliveryOtp,
-                deliveryEstimate: getDeliveryDate(12)
+                deliveryEstimate: getDeliveryDate(12),
+                paymentMethod: payMethod,
+                paymentId: paymentId
             };
             await addDoc(collection(db, "orders"), orderData);
             
@@ -407,11 +485,14 @@ document.getElementById('finishOrderBtn')?.addEventListener('click', async () =>
         
         updateCartCount();
         checkoutItems = [];
-        alert('Congratulations! Your order has been placed.');
+        hideLoading();
+        showToast('Congratulations! Your order has been placed successfully.', 'success');
         showSection('home');
-    } catch(e) { alert('Order Error: ' + e.message); }
-    hideLoading();
-});
+    } catch (e) {
+        hideLoading();
+        showToast("Error saving order: " + e.message, "error");
+    }
+};
 
 // Cartesian click
 document.querySelector('.cart-container')?.addEventListener('click', () => showSection('cart'));
@@ -421,90 +502,144 @@ function renderProducts() {
     const hPage = document.getElementById('homePage');
     if (!grid || (hPage && hPage.style.display === 'none')) return;
     
-    let filtered = products;
+    const isSearch = searchQuery.trim() !== '';
+    const queryStr = searchQuery.toLowerCase().trim();
+    const keywords = queryStr.split(/\s+/);
 
-    // Smart Fuzzy Search Logic
-    if (searchQuery.trim() !== '') {
-        const query = searchQuery.toLowerCase().trim();
-        const keywords = query.split(/\s+/);
-        filtered = products.filter(p => {
-            const title = (p.title || p.name || "").toLowerCase();
-            const desc = (p.desc || "").toLowerCase();
-            const cat = (p.category || "").toLowerCase();
-            const brand = (p.brand || "").toLowerCase();
-            
-            // Allow matching if any part of the metadata contains the keywords
-            return keywords.every(k => 
-                title.includes(k) || 
-                desc.includes(k) || 
-                cat.includes(k) || 
-                brand.includes(k)
-            );
-        });
-    } else {
-        // Normal Category Filtering
-        if (activeCat === 'top') {
-            filtered = products.filter(p => p.category === 'top');
-        } else {
-            if (activeSubcat) {
-                const matchKey = `${activeCat}_${activeSubcat}`;
-                filtered = products.filter(p => p.category === matchKey || p.category === activeSubcat);
-            } else {
-                filtered = products.filter(p => (p.category || "").startsWith(activeCat));
-            }
+    const filterFn = (p) => {
+        if (!isSearch) return true;
+        const title = (p.title || p.name || "").toLowerCase();
+        const desc = (p.desc || "").toLowerCase();
+        const cat = (p.category || "").toLowerCase();
+        const brand = (p.brand || "").toLowerCase();
+        const model = (p.modelName || "").toLowerCase();
+        const material = (p.material || "").toLowerCase();
+        return keywords.some(k => 
+            title.includes(k) || desc.includes(k) || cat.includes(k) || 
+            brand.includes(k) || model.includes(k) || material.includes(k)
+        );
+    };
+
+    grid.style.display = 'block';
+    grid.className = 'home-sections-container';
+    let html = '';
+    let firstMatchSectionId = null;
+    
+    // 1. Top Deals
+    const topDeals = products.filter(p => p.category === 'top' && filterFn(p));
+    if(topDeals.length > 0) {
+        if (!firstMatchSectionId) firstMatchSectionId = 'section_top';
+        html += `<div class="hp-cat-section" id="section_top">
+            <div class="hp-cat-header"><span class="live-dot-pulse"></span> ✨ TOP STEALS OF THE DAY</div>
+            <div class="hp-product-grid">${renderCardSet(topDeals)}</div>
+        </div>`;
+    }
+
+    // 2. Dynamic Categories
+    categories.forEach(cat => {
+        if (cat.id === 'top' || cat.firestoreId === 'top') return;
+
+        const mainId = cat.id || cat.firestoreId; // Use both sources to be sure
+        let catProds = products.filter(p => (p.category || "").startsWith(mainId));
+        
+        if (activeSubcat && (activeCat === mainId)) {
+            catProds = catProds.filter(p => p.category === `${mainId}_${activeSubcat}` || p.category === activeSubcat);
         }
-    }
-    if (filtered.length === 0) {
-        grid.style.display = 'block';
-        grid.innerHTML = `<div class="premium-empty-state">
-            <div class="empty-icon-wrapper">
-                <i class="fa-solid fa-hourglass-start pulsing-icon"></i>
-            </div>
-            <h2>We are Listing Product...</h2>
-            <p>Our team is curating the best collection for you. Stay Tuned!</p>
-            <button class="back-home-btn" onclick="window.activeCat='top'; renderMainCategories(); renderProducts();">Explore Other Deals</button>
-        </div>`;
-        return;
-    }
-    grid.style.display = 'grid';
-    grid.innerHTML = filtered.map(p => {
-        const price = parseFloat(p.price) || 0;
-        const oldPrice = parseFloat(p.oldPrice) || (price * 1.5);
-        const discount = Math.round(((oldPrice - price) / oldPrice) * 100);
-        return `<div class="product-card" onclick="viewProduct('${p.id}')">
-            <img src="${p.imageUrl || p.img}" alt="${p.title || p.name}" class="product-image">
-            <div class="product-info">
-                <h3>${p.title || p.name}</h3>
-                <div class="price-tag"><b>₹${price}</b> <span class="old-price">₹${oldPrice.toFixed(0)}</span> <span class="discount">${discount}% off</span></div>
-                ${p.isAssured ? `<img src="A.png" class="f-assured" alt="Assured">` : ''}
-            </div>
-        </div>`;
-    }).join('');
 
-    const header = document.querySelector('#dynamicSection h2');
-    const timer = document.getElementById('timerGroup');
-    const subNav = document.getElementById('dynamicSubNav');
-    if (activeCat === 'top') {
-        if(header) header.innerHTML = `<span class="live-dot-pulse"></span> ✨ TOP STEALS OF THE DAY`;
-        if(timer) timer.style.display = 'flex';
-        if(subNav) subNav.style.display = 'none';
-    } else {
-        const cat = categories.find(c => c.id === activeCat);
-        if(header) header.textContent = cat ? cat.label : 'Products';
-        if(timer) timer.style.display = 'none';
-        if (cat && cat.subCategories && cat.subCategories.length > 0) {
-            if(subNav) {
-                subNav.style.display = 'flex';
-                // Add an "ALL" option to the sub-nav as well
-                const allTab = `<div class="subcat-item ${!activeSubcat ? 'active' : ''}" onclick="window.activeSubcat=''; renderProducts();">ALL</div>`;
-                subNav.innerHTML = allTab + cat.subCategories.map((sub, index) => `<div class="subcat-item ${activeSubcat === sub.id ? 'active' : ''}" onclick="window.activeSubcat='${sub.id}'; renderProducts();">${sub.label}</div>`).join('');
+        const finalProds = catProds.filter(filterFn);
+
+        if(!isSearch || finalProds.length > 0) {
+            if (isSearch && !firstMatchSectionId) firstMatchSectionId = `section_${mainId}`;
+            
+            let subHtml = '';
+            if (!isSearch && cat.subCategories && cat.subCategories.length > 0) {
+                subHtml = `<div class="hp-subcat-bar">
+                    <div class="hp-sub-chip ${activeCat === mainId && !activeSubcat ? 'active' : ''}" 
+                         onclick="selectCategory('${mainId}')">ALL</div>
+                    ${cat.subCategories.map(sub => `
+                        <div class="hp-sub-chip ${activeCat === mainId && activeSubcat === sub.id ? 'active' : ''}" 
+                             onclick="selectSubCategory('${mainId}', '${sub.id}')">
+                             ${sub.label}
+                        </div>
+                    `).join('')}
+                </div>`;
             }
-        } else {
-            if(subNav) subNav.style.display = 'none';
-            activeSubcat = '';
+
+            html += `<div class="hp-cat-section" id="section_${mainId}">
+                <div class="hp-cat-header">${isSearch ? `RESULTS IN ${cat.label.toUpperCase()}` : cat.label.toUpperCase()}</div>
+                ${subHtml}
+                <div class="hp-product-grid">
+                    ${finalProds.length > 0 ? renderCardSet(finalProds) : `<div class="empty-sub">No items available in this category yet.</div>`}
+                </div>
+            </div>`;
+        }
+    });
+
+    grid.innerHTML = html || `<div class="premium-empty-state"><h2>Listing Products...</h2></div>`;
+
+    // 3. AUTO-SCROLL TO FIRST MATCH
+    if (isSearch && firstMatchSectionId) {
+        const el = document.getElementById(firstMatchSectionId);
+        if (el) {
+            const top = el.getBoundingClientRect().top + window.pageYOffset - 150; // More offset
+            window.scrollTo({ top, behavior: 'smooth' });
         }
     }
 }
+
+function renderCardSet(set) {
+    return set.map(p => {
+        const price = parseFloat(p.price) || 0;
+        const oldPrice = parseFloat(p.oldPrice) || (price * 1.5);
+        const discount = Math.round(((oldPrice - price) / oldPrice) * 100);
+        const rating = (Math.random() * (4.5 - 3.5) + 3.5).toFixed(1); // Simulated rating
+        
+        return `<div class="product-card-shopy" onclick="viewProduct('${p.id}')">
+            <div class="shopy-img-container">
+                <img src="${p.imageUrl || p.img}" alt="${p.title || p.name}" class="product-image">
+                <div class="shopy-rating-badge">${rating} <i class="fa fa-star"></i></div>
+            </div>
+            <div class="shopy-info">
+                <h3 class="shopy-title">${p.title || p.name}</h3>
+                <div class="shopy-price-row">
+                    <span class="shopy-discount">${discount}% off</span>
+                    <span class="shopy-price">₹${price}</span>
+                </div>
+                <div class="shopy-badge-row">
+                    ${p.isAssured ? `<span class="shopy-tag green"><i class="fa fa-layer-group"></i> Min 2 items</span>` : `<span class="shopy-tag purple">Bestseller</span>`}
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+window.selectProductSize = (el) => {
+    document.querySelectorAll('.size-chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('selectedProductSize').value = el.dataset.size;
+};
+
+window.addToCart = (id) => {
+    const p = products.find(prod => prod.id === id);
+    if (!p) return;
+    
+    // Check for size selection if available
+    const sizeInput = document.getElementById('selectedProductSize');
+    if (sizeInput && !sizeInput.value) {
+        showToast("Please select a size first!", "info");
+        return;
+    }
+    const selectedSize = sizeInput ? sizeInput.value : null;
+
+    let cart = JSON.parse(localStorage.getItem('cart') || '[]');
+    const existing = cart.find(item => item.id === id && item.selectedSize === selectedSize);
+    if (existing) existing.quantity++;
+    else cart.push({ ...p, quantity: 1, selectedSize });
+    
+    localStorage.setItem('cart', JSON.stringify(cart));
+    updateCartCount();
+    showToast("Added to Cart!", "success");
+};
 
 window.viewProduct = (id) => {
     if (!auth.currentUser) { modal.style.display = "block"; return; }
@@ -710,11 +845,13 @@ onAuthStateChanged(auth, async (user) => {
                 const isProfileComplete = userData.displayName && userData.phoneNumber && userData.address;
                 document.getElementById("authSection").innerHTML = `
                     <div class="user-dropdown">
-                        <div class="user-trigger" id="userMenuBtn">Hi, ${userName}! <i class="fa fa-chevron-down"></i></div>
+                        <div class="user-trigger" id="userMenuBtn" onclick="const m = document.getElementById('userMenuContent'); m.style.display = m.style.display === 'none' ? 'block' : 'none'; event.stopPropagation();">
+                            Hi, ${userName}! <i class="fa fa-chevron-down"></i>
+                        </div>
                         <div class="dropdown-content" id="userMenuContent" style="display: none;">
-                            <div class="menu-item" id="goToOrders"><i class="fa fa-box"></i> My Orders</div>
-                            <div class="menu-item" id="goToProfile"><i class="fa fa-user"></i> Profile</div>
-                            <div class="menu-item" id="logout"><i class="fa fa-sign-out-alt"></i> Logout</div>
+                            <div class="menu-item" onclick="showSection('orders')"><i class="fa fa-box"></i> My Orders</div>
+                            <div class="menu-item" onclick="showSection('profile')"><i class="fa fa-user"></i> Profile</div>
+                            <div class="menu-item" onclick="auth.signOut().then(() => location.reload())"><i class="fa fa-sign-out-alt"></i> Logout</div>
                         </div>
                     </div>`;
                 if (!isProfileComplete && !sessionStorage.getItem('profileSetupSkipped')) document.getElementById('profileSetupModal').style.display = 'flex';
@@ -836,19 +973,231 @@ document.getElementById('editAddressBtn')?.addEventListener('click', () => {
 document.getElementById('backToHome')?.addEventListener('click', () => showSection('home'));
 document.getElementById('skipProfile')?.addEventListener('click', () => { sessionStorage.setItem('profileSetupSkipped', 'true'); document.getElementById('profileSetupModal').style.display = 'none'; });
 
-// Helpers
-const showToast = (msg) => {
-    if (!toast) return;
-    toast.textContent = msg;
-    toast.style.display = 'block';
-    setTimeout(() => { toast.style.display = 'none'; }, 2500);
+window.requestCancel = async (orderId) => {
+    const ok = await showConfirm('Cancel Order?', 'Are you sure you want to request cancellation for this order?');
+    if(!ok) return;
+    showLoading("Sending Cancellation Request...");
+    try {
+        await updateDoc(doc(db, "orders", orderId), { status: 'Cancellation Requested' });
+        setTimeout(() => {
+            hideLoading();
+            showToast("Cancellation Request Sent Successfully! Status will update shortly.");
+        }, 1500);
+    } catch(e) { 
+        hideLoading();
+        console.error(e);
+        showToast('Cancellation failed: ' + e.message, "error"); 
+    }
 };
 
-const showLoading = (msg = "Processsing...") => {
-    const overlay = document.getElementById('loadingOverlay');
-    if (overlay) { overlay.querySelector('p').textContent = msg; overlay.style.display = 'flex'; }
+const showConfirm = (title, msg) => {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('confirmModal');
+        if(!modal) return resolve(confirm(msg));
+        
+        document.getElementById('confirmTitle').textContent = title;
+        document.getElementById('confirmMsg').textContent = msg;
+        modal.style.display = 'flex';
+        
+        document.getElementById('confirmOkBtn').onclick = () => { modal.style.display = 'none'; resolve(true); };
+        document.getElementById('confirmCancelBtn').onclick = () => { modal.style.display = 'none'; resolve(false); };
+    });
 };
-const hideLoading = () => { const overlay = document.getElementById('loadingOverlay'); if (overlay) overlay.style.display = 'none'; };
+
+window.renderMainCategories = () => {
+    const nav = document.getElementById('mainCatsNav');
+    if(!nav) return;
+    
+    // Ensure 'top' exists in the display order
+    let displayCats = [...categories];
+    const hasTop = displayCats.some(c => (c.id === 'top' || c.firestoreId === 'top'));
+    if (!hasTop) {
+        // Use the GIFT BOX icon from your previous screenshot
+        displayCats.unshift({ 
+            id: 'top', 
+            label: 'Top Offers', 
+            icon: 'https://rukminim1.flixcart.com/fk-p-flap/128/128/image/f97d24fd9f939771.png?q=100' // Gift box
+        });
+    }
+
+    nav.innerHTML = displayCats.map(cat => {
+        const mainId = cat.firestoreId || cat.id; 
+        const hasSub = cat.subCategories && cat.subCategories.length > 0;
+        
+        let flyoutHtml = '';
+        if (hasSub) {
+            flyoutHtml = `
+                <div class="subcat-dropdown" style="z-index: 10000; display: none;" id="dropdown_${mainId}">
+                    ${cat.subCategories.map(sub => `
+                        <div class="flyout-item" onclick="event.stopPropagation(); selectSubCategory('${mainId}', '${sub.id}')">
+                            ${sub.label}
+                        </div>
+                    `).join('')}
+                </div>`;
+        }
+
+        const isActive = (window.activeCat === mainId);
+
+        return `
+            <div class="cat-item ${isActive ? 'active' : ''}" 
+                 onclick="handleCatClick(event, '${mainId}', ${hasSub})">
+                <img src="${cat.icon || 'https://rukminim1.flixcart.com/flap/128/128/image/22fddf3c7da4c4f4.png?q=100'}" alt="${cat.label}">
+                <span>${cat.label} ${hasSub ? '<i class="fa fa-chevron-down" style="font-size:10px; margin-left:4px;"></i>' : ''}</span>
+                ${flyoutHtml}
+            </div>`;
+    }).join('');
+
+    // Update mobile snapping
+    if (window.innerWidth <= 768) {
+        document.querySelectorAll('.cat-item').forEach(item => {
+            item.style.scrollSnapAlign = 'start';
+        });
+    }
+};
+
+window.handleCatClick = (e, catId, hasSub) => {
+    // If mobile and HAS subcategories, toggle dropdown first
+    if (window.innerWidth <= 768 && hasSub) {
+        const dropdown = document.getElementById(`dropdown_${catId}`);
+        if (dropdown) {
+            const isHidden = dropdown.style.display === 'none' || dropdown.style.display === '';
+            // Hide all others
+            document.querySelectorAll('.subcat-dropdown').forEach(d => d.style.display = 'none');
+            
+            if (isHidden) {
+                dropdown.style.display = 'grid';
+                e.stopPropagation();
+                return; 
+            }
+        }
+    }
+    
+    // If NO sub-categories (like Top Offers), direct scroll immediately!
+    selectCategory(catId);
+};
+
+window.selectCategory = (catId) => {
+    window.activeCat = catId;
+    window.activeSubcat = ''; 
+    window.searchQuery = '';
+    
+    // Clear search input if navigated by category
+    const searchInputElement = document.getElementById('mainSearchInput');
+    if (searchInputElement) searchInputElement.value = '';
+
+    // If not on home page, switch to home first
+    const hPage = document.getElementById('homePage');
+    if (hPage && hPage.style.display === 'none') {
+        showSection('home');
+    }
+
+    // 400ms delay for full render + scroll
+    setTimeout(() => {
+        renderProducts(); 
+        renderMainCategories();
+        
+        // Add active class to all cat-items first
+        document.querySelectorAll('.cat-item').forEach(item => item.classList.remove('active'));
+        const activeCatItem = Array.from(document.querySelectorAll('.cat-item')).find(item => 
+            item.onclick?.toString().includes(catId) || item.dataset.cat === catId
+        );
+        if (activeCatItem) activeCatItem.classList.add('active');
+        
+        let sectionId = catId === 'top' ? 'section_top' : `section_${catId}`;
+        let sectionEl = document.getElementById(sectionId);
+        
+        // Enhanced fallback: search all sections
+        if(!sectionEl) {
+            sectionEl = document.querySelector(`.hp-cat-section[id*='${catId}']`) ||
+                       Array.from(document.querySelectorAll('.hp-cat-section')).find(s => 
+                           s.innerText.toLowerCase().includes(catId.toLowerCase())
+                       );
+        }
+
+        if(sectionEl) {
+            // Add scrollable-active class
+            sectionEl.classList.add('scrollable-active');
+            setTimeout(() => sectionEl.classList.remove('scrollable-active'), 3000);
+            
+            // Precise offset with scroll-margin-top support
+            const headerHeight = window.innerWidth <= 768 ? 260 : 220; 
+            const rect = sectionEl.getBoundingClientRect();
+            const topOffset = rect.top + window.pageYOffset - headerHeight;
+            window.scrollTo({ top: topOffset, behavior: 'smooth' });
+        } else {
+            // Grid fallback
+            const grid = document.getElementById('dynamicProductGrid');
+            if(grid) {
+                const topOffset = grid.getBoundingClientRect().top + window.pageYOffset - 220;
+                window.scrollTo({ top: topOffset, behavior: 'smooth' });
+            }
+        }
+    }, 400);
+};
+
+window.selectSubCategory = (catId, subId) => {
+    window.activeCat = catId;
+    window.activeSubcat = subId;
+    window.searchQuery = '';
+    
+    // Hide all dropdowns immediately after selecting subcat
+    document.querySelectorAll('.subcat-dropdown').forEach(d => d.style.display = 'none');
+
+    // If not on home page, switch to home first
+    const hPage = document.getElementById('homePage');
+    if (hPage && hPage.style.display === 'none') {
+        showSection('home');
+    }
+
+    setTimeout(() => {
+        renderProducts();
+        renderMainCategories();
+        
+        const sectionId = `section_${catId}`;
+        let sectionEl = document.getElementById(sectionId);
+        
+        if(sectionEl) {
+            // Scroll to subcat bar if exists
+            const subcatBar = sectionEl.querySelector('.hp-subcat-bar');
+            if(subcatBar) {
+                const headerOffset = window.innerWidth <= 768 ? 280 : 260;
+                const target = subcatBar.getBoundingClientRect().top + window.pageYOffset - headerOffset;
+                window.scrollTo({ top: target, behavior: 'smooth' });
+            } else {
+                const headerOffset = window.innerWidth <= 768 ? 260 : 220;
+                const target = sectionEl.getBoundingClientRect().top + window.pageYOffset - headerOffset;
+                window.scrollTo({ top: target, behavior: 'smooth' });
+            }
+            
+            // Highlight section
+            sectionEl.classList.add('scrollable-active');
+            setTimeout(() => sectionEl.classList.remove('scrollable-active'), 3000);
+        }
+    }, 400);
+};
+
+// Helpers
+const showToast = (msg, type = "info") => {
+    const toast = document.getElementById('toast');
+    if(!toast) return;
+    toast.textContent = msg;
+    toast.className = `toast-message show ${type}`;
+    setTimeout(() => toast.className = "toast-message", 3000);
+};
+
+const showLoading = (msg = "Loading...") => {
+    const loader = document.getElementById('globalLoader');
+    if(loader) {
+        loader.style.display = 'flex';
+        const text = loader.querySelector('p');
+        if(text) text.textContent = msg;
+    }
+};
+
+const hideLoading = () => {
+    const loader = document.getElementById('globalLoader');
+    if(loader) loader.style.display = 'none';
+};
 
 window.showPolicy = (type) => {
     const modal = document.getElementById('policyModal');
@@ -989,6 +1338,52 @@ const smoothScrollToDeals = () => {
     if (section) section.scrollIntoView({ behavior: 'smooth' });
 };
 
+window.showSection = (id) => {
+    // Hide all main containers
+    document.querySelectorAll('main.container, main[id$="Page"]').forEach(s => s.style.display = 'none');
+    
+    // Header Visibility Logic for Home/Others
+    const searchBar = document.querySelector('.search-container');
+    const categoriesNav = document.getElementById('mainCatsNav');
+    
+    if(id === 'home') {
+        if(searchBar) searchBar.style.visibility = 'visible';
+        if(categoriesNav) categoriesNav.style.display = 'flex';
+        renderProducts();
+    } else {
+        if(searchBar) searchBar.style.visibility = 'hidden';
+        if(categoriesNav) categoriesNav.style.display = 'none';
+    }
+
+    const target = document.getElementById(id + 'Page') || document.getElementById(id + 'Section');
+    if(target) {
+        target.style.display = 'block';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+        console.error("Section not found:", id);
+    }
+    
+    // Refresh Data for specific pages
+    if(id === 'orders') renderOrders();
+    if(id === 'cart') renderCart();
+    if(id === 'profile') loadProfileData();
+};
+
+window.deleteOrder = async (orderId) => {
+    if(!confirm("Are you sure you want to remove this order from your history?")) return;
+    try {
+        await deleteDoc(doc(db, "orders", orderId));
+        showToast("Order removed successfully.");
+    } catch (e) {
+        showToast("Deletion failed: " + e.message, "error");
+    }
+};
+
+document.addEventListener('click', (e) => {
+    const menu = document.getElementById('userMenuContent');
+    if (menu && !e.target.closest('.user-dropdown')) menu.style.display = 'none';
+});
+
 const renderMainCategories = () => {
     const nav = document.getElementById('mainCatsNav');
     if(!nav) return;
@@ -1044,3 +1439,13 @@ window.toggleReadMore = (btn) => {
         btn.innerHTML = 'READ MORE <i class="fa fa-chevron-down"></i>';
     }
 };
+
+// Sort Bar Listeners
+document.querySelectorAll('.sort-btn').forEach(btn => {
+    btn.onclick = () => {
+        document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentSort = btn.dataset.sort;
+        renderProducts();
+    };
+});
