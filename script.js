@@ -373,30 +373,38 @@ const startCheckout = async () => {
         const payFinalAmtElV5 = document.getElementById('payFinalAmountV5');
         if(payFinalAmtElV5) payFinalAmtElV5.textContent = `₹${total}`;
 
-        // Enforce Login-based Online Payment
-        const onlineOption = document.getElementById('onlinePayOption');
-        if(onlineOption) {
-            if(!user) {
-                onlineOption.style.display = 'none';
-                window.selectedPayMethod = 'COD';
-                window.detailedPayMethod = 'COD';
-            } else {
-                onlineOption.style.display = 'flex';
-                window.selectedPayMethod = 'ONLINE';
-                window.detailedPayMethod = 'UPI / Online';
-            }
-        }
-
         // V5 Selection Interaction
-        document.querySelectorAll('.pay-method-row').forEach(row => {
+        const allMethods = document.querySelectorAll('.pay-method-row');
+        allMethods.forEach(row => {
             row.onclick = () => {
-                document.querySelectorAll('.pay-method-row').forEach(r => r.classList.remove('active'));
+                allMethods.forEach(r => r.classList.remove('active'));
                 row.classList.add('active');
                 window.selectedPayMethod = row.dataset.method;
                 const titleNode = row.querySelector('.pay-main-title');
                 window.detailedPayMethod = titleNode ? titleNode.textContent.trim() : 'Method';
             };
         });
+
+        // Setup COD Availability
+        const codDisabled = checkoutItems.some(p => p.hasCOD === false);
+        const codRow = document.querySelector('.pay-method-row[data-method="COD"]');
+        const onlineOption = document.getElementById('onlinePayOption');
+
+        if (codRow) {
+            if (codDisabled) {
+                codRow.style.opacity = '0.4';
+                codRow.style.pointerEvents = 'none';
+                const subNode = codRow.querySelector('.pay-sub-text');
+                if (subNode) subNode.innerHTML = '<span style="color:#d32f2f; font-weight:bold;">Not Available for selected items</span>';
+            } else {
+                codRow.style.opacity = '1';
+                codRow.style.pointerEvents = 'auto';
+                const subNode = codRow.querySelector('.pay-sub-text');
+                if (subNode) subNode.innerText = 'Safe and Reliable Delivery';
+            }
+        }
+        
+        if (onlineOption) onlineOption.click(); // Default to online
         
     } catch(e) { 
         console.error("Checkout Preparation Error:", e); 
@@ -469,6 +477,7 @@ const saveOrders = async (userId, userData, payMethod, paymentId) => {
                 productTitle: p.title || p.name,
                 productPrice: p.price,
                 productImage: p.imageUrl || p.img,
+                selectedSize: p.selectedSize || 'N/A',
                 orderDate: new Date().toISOString(),
                 status: 'Ordered',
                 deliveryOtp: deliveryOtp,
@@ -539,7 +548,7 @@ function renderProducts() {
     categories.forEach(cat => {
         if (cat.id === 'top' || cat.firestoreId === 'top') return;
 
-        const mainId = cat.id || cat.firestoreId; // Use both sources to be sure
+        const mainId = cat.id || cat.firestoreId; // Use ID first because products are mapped out with ID (e.g. 'men') in firestore
         let catProds = products.filter(p => (p.category || "").startsWith(mainId));
         
         if (activeSubcat && (activeCat === mainId)) {
@@ -685,8 +694,14 @@ window.viewProduct = (id) => {
 
             <!-- Authentic Trust Symbols -->
             <div class="trust-icons-horizontal">
-                <div class="trust-item"><i class="fa fa-rotate-left"></i> <span>7 Day Return</span></div>
-                ${p.isCod ? `<div class="trust-item"><i class="fa fa-money-bill-1"></i> <span>COD Available</span></div>` : ''}
+                ${p.returnable === false ? 
+                    `<div class="trust-item"><i class="fa fa-times-circle" style="color:#d32f2f;"></i> <span style="color:#d32f2f; text-decoration:line-through;">7 Day Return</span></div>` : 
+                    `<div class="trust-item"><i class="fa fa-rotate-left"></i> <span>7 Day Return</span></div>`
+                }
+                ${p.hasCOD === false ? 
+                    `<div class="trust-item"><i class="fa fa-times-circle" style="color:#d32f2f;"></i> <span style="color:#d32f2f; text-decoration:line-through;">COD Available</span></div>` : 
+                    `<div class="trust-item"><i class="fa fa-money-bill-1"></i> <span>COD Available</span></div>`
+                }
                 <div class="trust-item"><i class="fa fa-shield-check"></i> <span>Trusted Quality</span></div>
             </div>
 
@@ -700,6 +715,15 @@ window.viewProduct = (id) => {
                     <div class="highlight-point"><i class="fa fa-circle-check"></i> Breathable Fabric</div>
                 </div>
             </div>
+
+            ${p.sizes && p.sizes.length > 0 ? `
+            <div class="product-size-section" style="margin-top:20px; text-align:left;">
+                <h4 style="font-size:14px; margin-bottom:10px;">Select Size:</h4>
+                <div class="size-options" style="display:flex; gap:10px; flex-wrap:wrap;">
+                    ${p.sizes.map(size => `<button class="size-chip" data-size="${size}" onclick="selectProductSize(this)" style="padding:8px 15px; border:1px solid #ccc; background:#fff; border-radius:4px; cursor:pointer;">${size}</button>`).join('')}
+                </div>
+                <input type="hidden" id="selectedProductSize" value="">
+            </div>` : `<input type="hidden" id="selectedProductSize" value="N/A">`}
 
             <!-- Specifications -->
             <div class="product-specs-premium">
@@ -784,26 +808,12 @@ document.addEventListener('click', (e) => {
         document.getElementById("loginView").style.display = "block";
         document.getElementById("modalTitle").textContent = "Login";
     }
-    if (e.target.id === 'googleBtn' || e.target.closest('#googleBtn')) {
+    if (e.target.id === 'googleBtn' || e.target.closest('#googleBtn') || e.target.id === 'googleBtnSignup' || e.target.closest('#googleBtnSignup')) {
         signInWithPopup(auth, provider).then(() => modal.style.display = "none").catch(err => alert(err.message));
     }
-    if (e.target.id === 'logout') signOut(auth).then(() => location.reload());
+    if (e.target.id === 'logout' || e.target.closest('#logoutBtnMain')) signOut(auth).then(() => location.reload());
     if (e.target.classList.contains('logo') || e.target.classList.contains('back-btn')) showSection('home');
 
-    const catItem = e.target.closest('.cat-item');
-    if (catItem) {
-        activeCat = catItem.dataset.cat;
-        activeSubcat = '';
-        document.querySelectorAll('.cat-item').forEach(i => i.classList.remove('active'));
-        catItem.classList.add('active');
-        renderProducts();
-    }
-    if (e.target.classList.contains('subcat-item')) {
-        activeSubcat = e.target.dataset.subcat;
-        document.querySelectorAll('.subcat-item').forEach(i => i.classList.remove('active'));
-        e.target.classList.add('active');
-        renderProducts();
-    }
     const menuBtn = e.target.closest('#userMenuBtn');
     const menu = document.getElementById('userMenuContent');
     if (menuBtn) menu.style.display = (menu.style.display === 'none') ? 'block' : 'none';
@@ -851,7 +861,7 @@ onAuthStateChanged(auth, async (user) => {
                         <div class="dropdown-content" id="userMenuContent" style="display: none;">
                             <div class="menu-item" onclick="showSection('orders')"><i class="fa fa-box"></i> My Orders</div>
                             <div class="menu-item" onclick="showSection('profile')"><i class="fa fa-user"></i> Profile</div>
-                            <div class="menu-item" onclick="auth.signOut().then(() => location.reload())"><i class="fa fa-sign-out-alt"></i> Logout</div>
+                            <div class="menu-item" id="logoutBtnMain"><i class="fa fa-sign-out-alt"></i> Logout</div>
                         </div>
                     </div>`;
                 if (!isProfileComplete && !sessionStorage.getItem('profileSetupSkipped')) document.getElementById('profileSetupModal').style.display = 'flex';
@@ -1004,6 +1014,9 @@ const showConfirm = (title, msg) => {
     });
 };
 
+const renderMainCategories = () => { window.renderMainCategories(); };
+
+
 window.renderMainCategories = () => {
     const nav = document.getElementById('mainCatsNav');
     if(!nav) return;
@@ -1012,22 +1025,22 @@ window.renderMainCategories = () => {
     let displayCats = [...categories];
     const hasTop = displayCats.some(c => (c.id === 'top' || c.firestoreId === 'top'));
     if (!hasTop) {
-        // Use the GIFT BOX icon from your previous screenshot
+        // Use the proper Deals icon
         displayCats.unshift({ 
             id: 'top', 
             label: 'Top Offers', 
-            icon: 'https://rukminim1.flixcart.com/fk-p-flap/128/128/image/f97d24fd9f939771.png?q=100' // Gift box
+            icon: 'https://rukminim1.flixcart.com/flap/128/128/image/f15c02bfeb02d15d.png?q=100' // Deals
         });
     }
 
     nav.innerHTML = displayCats.map(cat => {
-        const mainId = cat.firestoreId || cat.id; 
+        const mainId = cat.id || cat.firestoreId; // ID must be prioritized to match product's category schema.
         const hasSub = cat.subCategories && cat.subCategories.length > 0;
         
         let flyoutHtml = '';
         if (hasSub) {
             flyoutHtml = `
-                <div class="subcat-dropdown" style="z-index: 10000; display: none;" id="dropdown_${mainId}">
+                <div class="subcat-flyout" id="dropdown_${mainId}">
                     ${cat.subCategories.map(sub => `
                         <div class="flyout-item" onclick="event.stopPropagation(); selectSubCategory('${mainId}', '${sub.id}')">
                             ${sub.label}
@@ -1036,7 +1049,7 @@ window.renderMainCategories = () => {
                 </div>`;
         }
 
-        const isActive = (window.activeCat === mainId);
+        const isActive = (activeCat === mainId);
 
         return `
             <div class="cat-item ${isActive ? 'active' : ''}" 
@@ -1062,7 +1075,7 @@ window.handleCatClick = (e, catId, hasSub) => {
         if (dropdown) {
             const isHidden = dropdown.style.display === 'none' || dropdown.style.display === '';
             // Hide all others
-            document.querySelectorAll('.subcat-dropdown').forEach(d => d.style.display = 'none');
+            document.querySelectorAll('.subcat-flyout').forEach(d => d.style.display = '');
             
             if (isHidden) {
                 dropdown.style.display = 'grid';
@@ -1077,9 +1090,9 @@ window.handleCatClick = (e, catId, hasSub) => {
 };
 
 window.selectCategory = (catId) => {
-    window.activeCat = catId;
-    window.activeSubcat = ''; 
-    window.searchQuery = '';
+    activeCat = catId;
+    activeSubcat = ''; 
+    searchQuery = '';
     
     // Clear search input if navigated by category
     const searchInputElement = document.getElementById('mainSearchInput');
@@ -1136,12 +1149,12 @@ window.selectCategory = (catId) => {
 };
 
 window.selectSubCategory = (catId, subId) => {
-    window.activeCat = catId;
-    window.activeSubcat = subId;
-    window.searchQuery = '';
+    activeCat = catId;
+    activeSubcat = subId;
+    searchQuery = '';
     
     // Hide all dropdowns immediately after selecting subcat
-    document.querySelectorAll('.subcat-dropdown').forEach(d => d.style.display = 'none');
+    document.querySelectorAll('.subcat-flyout').forEach(d => d.style.display = '');
 
     // If not on home page, switch to home first
     const hPage = document.getElementById('homePage');
@@ -1274,8 +1287,11 @@ async function handleBuyNow(product) {
         const userSnap = await getDoc(doc(db, "users", user.uid));
         const userData = userSnap.data();
         if (!isAddressComplete(userData)) { alert('First complete your shipping address!'); document.getElementById('profileSetupModal').style.display = 'flex'; return; }
+        const sizeInput = document.getElementById('selectedProductSize');
+        if (sizeInput && !sizeInput.value) { alert("Please select a size first!"); return; }
+        const selSize = sizeInput ? sizeInput.value : 'N/A';
         const deliveryOtp = Math.floor(100000 + Math.random() * 900000);
-        const orderData = { userId: user.uid, userName: userData.displayName, userEmail: user.email, address: userData.address, productId: product.id, productTitle: product.title || product.name, productPrice: product.price, productImage: product.imageUrl || product.img, orderDate: new Date().toISOString(), status: 'Ordered', deliveryOtp: deliveryOtp, deliveryEstimate: getDeliveryDate(12) };
+        const orderData = { userId: user.uid, userName: userData.displayName, userEmail: user.email, address: userData.address, productId: product.id, productTitle: product.title || product.name, productPrice: product.price, productImage: product.imageUrl || product.img, selectedSize: selSize, orderDate: new Date().toISOString(), status: 'Ordered', deliveryOtp: deliveryOtp, deliveryEstimate: getDeliveryDate(12) };
         await addDoc(collection(db, "orders"), orderData);
         alert('Congratulations! Your order has been placed.');
         showSection('home');
@@ -1384,46 +1400,7 @@ document.addEventListener('click', (e) => {
     if (menu && !e.target.closest('.user-dropdown')) menu.style.display = 'none';
 });
 
-const renderMainCategories = () => {
-    const nav = document.getElementById('mainCatsNav');
-    if(!nav) return;
-    const topOffers = `<div class="cat-item ${activeCat === 'top' ? 'active' : ''}" data-cat="top" onclick="window.activeCat='top'; window.activeSubCat='top'; renderMainCategories(); renderProducts(); smoothScrollToDeals();">
-        <img src="https://rukminim1.flixcart.com/flap/128/128/image/f15c02bfeb02d15d.png?q=100" alt="Deals">
-        <span>Top Offers</span>
-    </div>`;
-    const otherCats = categories.map(cat => `
-        <div class="cat-item ${activeCat === cat.id ? 'active' : ''}" data-cat="${cat.id}">
-            <img src="${cat.icon || 'https://rukminim1.flixcart.com/flap/128/128/image/82b3ca5fb2301045.png?q=100'}" alt="${cat.label}">
-            <span>${cat.label} <i class="fa fa-chevron-down" style="font-size:10px;"></i></span>
-            <div class="subcat-flyout">
-                ${(cat.subCategories || []).map(sub => `
-                    <div class="flyout-item" onclick="event.stopPropagation(); window.activeCat='${cat.id}'; window.activeSubcat='${sub.id}'; renderMainCategories(); renderProducts(); smoothScrollToDeals();">
-                        ${sub.label}
-                    </div>
-                `).join('')}
-            </div>
-        </div>
-    `).join('');
-    nav.innerHTML = topOffers + otherCats;
-    
-    // Category click
-    nav.querySelectorAll('.cat-item').forEach(item => {
-        if (!item.hasAttribute('onclick')) {
-            item.onclick = (e) => {
-                const cat = e.currentTarget.dataset.cat;
-                window.activeCat = cat;
-                window.activeSubcat = ''; // Clear sub-category to show ALL on main category click
-                renderMainCategories();
-                renderProducts();
-                smoothScrollToDeals();
-            };
-        }
-    });
 
-    // Shop Now Scroll
-    const shopNowBtn = document.querySelector('.banner-action-btn');
-    if (shopNowBtn) shopNowBtn.onclick = smoothScrollToDeals;
-};
 
 fetchData();
 loadStoreDeals();
