@@ -5,11 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stallcart | India's Premium Fashion Destination - Shop Men & Women Deals</title>
     
+    <!-- Cache Busting to ensure Users always see the newest version -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    
     <!-- SEO Meta Tags -->
     <meta name="description" content="Shop the latest fashion trends at Stallcart. Exclusive deals on men and women clothing, accessories and more. Best prices and 24-hour cancellation guaranteed.">
     <meta name="keywords" content="Stallcart, fashion, online shopping India, men clothing, women fashion, Stallcart.in, Manish Kumar Jaiswal, cheap clothes, premium fashion">
     <meta name="author" content="Manish Kumar Jaiswal">
     <link rel="canonical" href="https://stallcart.in/">
+    <link rel="icon" href="Lo.png" type="image/png">
     
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website">
@@ -25,7 +31,7 @@
     <meta property="twitter:description" content="Explore top deals on clothing and accessories. Quality and trust from Stallcart.">
     <meta property="twitter:image" content="logo.png">
 
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=2.0.1">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- Razorpay SDK -->
@@ -38,7 +44,10 @@
 
     <header class="navbar">
         <div class="nav-content">
-            <div class="logo">Stallcart</div>
+            <div class="logo-group" style="display: flex; align-items: center; gap: 8px; cursor: pointer;" onclick="showSection('home')">
+                <img src="Lo.png" alt="Stallcart" style="height: 40px; width: auto; object-fit: contain;">
+                <div class="logo">Stallcart</div>
+            </div>
             <div class="search-container">
                 <div class="search-box">
                     <i class="fa fa-search search-icon"></i>
@@ -74,7 +83,7 @@
                 <h1 id="bannerTitle">ELITE<br>FASHION.</h1>
                 <p id="bannerDesc">From the grace of Sarees to the edge of Modern Shirts. Discover curated pieces that define your style.</p>
                 <div class="banner-actions">
-                    <button class="banner-action-btn" id="bannerActionBtn" onclick="showSection('home')">Shop Latest Collection</button>
+                    <button class="banner-action-btn" id="bannerActionBtn" onclick="selectCategory('top')">Shop Latest Collection</button>
                     <span class="limited-tag" id="bannerLimitedTag">LIMITED EDITION</span>
                 </div>
             </div>
@@ -118,7 +127,7 @@
     <!-- Product Management Page (Shopsy Style) -->
     <main class="container" id="productPage" style="display: none;">
         <button class="back-btn" onclick="showSection('home')"><i class="fa fa-arrow-left"></i> BACK</button>
-        <div id="productDetails" class="product-grid-detail">
+        <div id="productDetails" class="product-wrapper">
             <!-- Filled by JS -->
         </div>
         
@@ -279,7 +288,7 @@
 
     <!-- Policy Viewer Modal -->
     <div id="policyModal" class="modal" style="display: none;">
-        <div class="modal-content" style="width: 800px; height: 600px; flex-direction: column; padding: 40px;">
+        <div class="modal-content" style="width: 800px; max-width: 90vw; height: 600px; max-height: 90vh; flex-direction: column; padding: 20px;">
             <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 15px;">
                 <h2 id="policyTitle" style="color: #212121;">Policy Details</h2>
                 <span class="close" onclick="document.getElementById('policyModal').style.display='none'">&times;</span>
@@ -341,6 +350,8 @@
                     <input type="email" id="semail" placeholder="Email">
                     <input type="password" id="spass" placeholder="Set Password">
                     <button class="action-btn orange-btn" id="signupSubmitAction">Create Account</button>
+                    <div class="separator">OR</div>
+                    <button class="action-btn google-btn" id="googleBtnSignup">Google Sign-In</button>
                     <p class="switch-text" id="toLogin">Existing User? Log in</p>
                 </div>
             </div>
@@ -384,7 +395,10 @@
                         <i class="fa fa-motorcycle"></i> Work as A Delivery Boy
                     </a>
                 </div>
-                <div class="footer-logo">Stallcart</div>
+                <div class="footer-logo-group" style="display: flex; align-items: center; gap: 8px; margin-top: 20px;">
+                    <img src="Lo.png" alt="Stallcart" style="height: 45px; width: auto; object-fit: contain;">
+                    <div class="logo" style="font-size: 24px; color: #fff; background: none; -webkit-text-fill-color: #fff;">Stallcart</div>
+                </div>
             </div>
             
             <div class="footer-column">
@@ -422,5 +436,6 @@
              <p style="font-size:11px; opacity:0.6;">&copy; 2026 Stallcart.in | India's Premium Destination. Manufactured with Love in India.</p>
         </div>
     </footer>
+    <script type="module" src="script.js?v=2.0.1"></script>
 </body>
 </html>
