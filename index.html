@@ -1,1465 +1,441 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, query, addDoc, updateDoc, where, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-const firebaseConfig = {
-    apiKey: "AIzaSyB1bnXrYuwJQ-prQN1hsPYwr_oR2WwghjU",
-    authDomain: "stallcart-2baa5.firebaseapp.com",
-    projectId: "stallcart-2baa5",
-    appId: "1:795612911191:web:c5ca9a3f1cf8872d0cf512"
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const provider = new GoogleAuthProvider();
-
-// UI Elements
-const modal = document.getElementById("authModal");
-const toast = document.getElementById("toast");
-const homePage = document.getElementById("homePage");
-const productPage = document.getElementById("productPage");
-const profilePage = document.getElementById("profilePage");
-const searchInput = document.getElementById('mainSearchInput');
-const suggestionsBox = document.getElementById('searchSuggestions');
-
-// Global State
-let products = [];
-let categories = [];
-let cart = JSON.parse(localStorage.getItem('stallcart_cart')) || [];
-let activeCat = 'top';
-let activeSubcat = '';
-let searchQuery = '';
-let currentSort = 'relevance';
-let isAuthProcessing = false;
-const updateCartCount = () => {
-    const countNodes = document.querySelectorAll('.cart-count');
-    countNodes.forEach(n => n.textContent = cart.length);
-    localStorage.setItem('stallcart_cart', JSON.stringify(cart));
-};
-document.addEventListener('DOMContentLoaded', updateCartCount);
-
-const fetchData = () => {
-    onSnapshot(query(collection(db, "products")), (snap) => {
-        products = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        renderProducts();
-    });
-
-    if (searchInput) {
-        // 1. Live Input for Suggestions
-        searchInput.addEventListener('input', (e) => {
-            const val = e.target.value.trim().toLowerCase();
-            if (val.length > 0) {
-                const matches = products.filter(p => 
-                    (p.title || p.name || "").toLowerCase().includes(val) ||
-                    (p.desc || "").toLowerCase().includes(val)
-                ).slice(0, 8); // Top 8 results
-                
-                if (matches.length > 0) {
-                    suggestionsBox.innerHTML = matches.map(m => `
-                        <div class="suggestion-item" onclick="applySearch('${m.title || m.name}')">
-                            <i class="fa fa-search"></i>
-                            <span>${m.title || m.name}</span>
-                        </div>
-                    `).join('');
-                    suggestionsBox.style.display = 'block';
-                } else {
-                    suggestionsBox.style.display = 'none';
-                }
-            } else {
-                suggestionsBox.style.display = 'none';
-                searchQuery = '';
-                renderProducts();
-            }
-        });
-
-        // 2. Enter Key to Search
-        searchInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                applySearch(searchInput.value);
-            }
-        });
-
-        // Hide suggestions on outside click
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.search-container')) suggestionsBox.style.display = 'none';
-        });
-    }
-
-    onSnapshot(query(collection(db, "categories")), (snap) => {
-        categories = snap.docs.map(doc => ({ firestoreId: doc.id, ...doc.data() }));
-        renderMainCategories();
-        renderProducts();
-    });
-};
-
-window.applySearch = (val) => {
-    searchQuery = val;
-    if (searchInput) searchInput.value = val;
-    const hPage = document.getElementById('homePage');
-    if (hPage && hPage.style.display === 'none') showSection('home');
-    if (suggestionsBox) suggestionsBox.style.display = 'none';
-    renderProducts();
-};
-
-
-let checkoutItems = [];
-
-const getDeliveryDate = (days = 12) => {
-    const d = new Date(); d.setDate(d.getDate() + days);
-    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    return `${d.getDate()} ${months[d.getMonth()]}`;
-};
-
-window.showSection = (section) => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    const hPage = document.getElementById('homePage');
-    const pPage = document.getElementById('productPage');
-    const profPage = document.getElementById('profilePage');
-    const cPage = document.getElementById('cartPage');
-    const chPage = document.getElementById('checkoutPage');
-    const oPage = document.getElementById('ordersPage');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stallcart | India's Premium Fashion Destination - Shop Men & Women Deals</title>
     
-    // Header Visibility Toggle
-    const searchBar = document.querySelector('.search-container');
-    const categoriesNav = document.getElementById('mainCatsNav');
-    const authSection = document.getElementById('authSection');
+    <!-- Cache Busting to ensure Users always see the newest version -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     
-    if (section === 'home') {
-        if(hPage) hPage.style.display = 'block';
-        if(pPage) pPage.style.display = 'none';
-        if(profPage) profPage.style.display = 'none';
-        if(cPage) cPage.style.display = 'none';
-        if(chPage) chPage.style.display = 'none';
-        if(oPage) oPage.style.display = 'none';
+    <!-- SEO Meta Tags -->
+    <meta name="description" content="Shop the latest fashion trends at Stallcart. Exclusive deals on men and women clothing, accessories and more. Best prices and 24-hour cancellation guaranteed.">
+    <meta name="keywords" content="Stallcart, fashion, online shopping India, men clothing, women fashion, Stallcart.in, Manish Kumar Jaiswal, cheap clothes, premium fashion">
+    <meta name="author" content="Manish Kumar Jaiswal">
+    <link rel="canonical" href="https://stallcart.in/">
+    <link rel="icon" href="Lo.png" type="image/png">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://stallcart.in/">
+    <meta property="og:title" content="Stallcart | India's Premium Fashion Destination">
+    <meta property="og:description" content="Shop the latest fashion trends at Stallcart. Best prices and fast delivery on all categories.">
+    <meta property="og:image" content="logo.png">
 
-        if(searchBar) searchBar.style.visibility = 'visible';
-        if(categoriesNav) categoriesNav.style.display = 'flex';
-        if(authSection) authSection.style.display = 'block';
-        renderProducts();
-    } else {
-        if(hPage) hPage.style.display = 'none';
-        if(pPage) pPage.style.display = section === 'product' ? 'block' : 'none';
-        if(profPage) profPage.style.display = section === 'profile' ? 'block' : 'none';
-        if(cPage) cPage.style.display = section === 'cart' ? 'block' : 'none';
-        if(chPage) chPage.style.display = section === 'checkout' ? 'block' : 'none';
-        if(oPage) oPage.style.display = section === 'orders' ? 'block' : 'none';
-        
-        if(searchBar) searchBar.style.visibility = 'hidden';
-        if(categoriesNav) categoriesNav.style.display = 'none';
-        if(authSection) authSection.style.display = 'none';
-    }
-    if (section === 'profile') loadProfileData();
-    if (section === 'cart') renderCart();
-    if (section === 'orders') renderOrders();
-};
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://stallcart.in/">
+    <meta property="twitter:title" content="Stallcart | Shop Latest Fashion Online">
+    <meta property="twitter:description" content="Explore top deals on clothing and accessories. Quality and trust from Stallcart.">
+    <meta property="twitter:image" content="logo.png">
 
-const renderCart = () => {
-    const list = document.getElementById('cartItemsList');
-    if(!list) return;
-    if(cart.length === 0) {
-        list.innerHTML = `
-            <div style="text-align:center; padding:80px 20px;">
-                <img src="e.png" width="220" style="margin-bottom:30px;">
-                <h3 style="font-size:24px; color:#212121; font-weight:800;">Your cart is empty!</h3>
-                <p style="color:#878787; margin-top:10px; font-size:16px;">Add items to it now.</p>
-                <button class="back-home-btn" style="margin-top:30px;" onclick="showSection('home')">Shop Now</button>
-            </div>`;
-        return;
-    }
-    let total = 0;
-    list.innerHTML = cart.map((p, index) => {
-        total += parseFloat(p.price);
-        return `<div class="cart-item-row">
-            <img src="${p.imageUrl || p.img}" alt="${p.title}">
-            <div style="flex:1;">
-                <h4>${p.title || p.name}</h4>
-                <div style="font-weight:600; margin-top:5px;">₹${p.price}</div>
-                <p style="font-size:12px; margin-top:10px;">Delivery by ${getDeliveryDate()} | <span class="green-text">Free</span></p>
+    <link rel="stylesheet" href="style.css?v=2.0.1">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Razorpay SDK -->
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+</head>
+<body>
+
+    <div id="toast" class="toast-message"></div>
+    <div id="announcementBar" class="announcement-bar" style="display: none;"></div>
+
+    <header class="navbar">
+        <div class="nav-content">
+            <div class="logo-group" style="display: flex; align-items: center; gap: 8px; cursor: pointer;" onclick="showSection('home')">
+                <img src="Lo.png" alt="Stallcart" style="height: 40px; width: auto; object-fit: contain;">
+                <div class="logo">Stallcart</div>
             </div>
-            <button onclick="removeFromCart(${index})" style="background:none; border:none; color:#2874f0; cursor:pointer; font-size:12px; font-weight:600;">REMOVE</button>
-        </div>`;
-    }).join('');
-    document.getElementById('cartTotalCount').textContent = cart.length;
-    document.getElementById('totalMRP').textContent = `₹${total}`;
-    document.getElementById('finalCartAmount').textContent = `₹${total}`;
-};
-
-const renderOrders = async () => {
-    const user = auth.currentUser; if(!user) return;
-    const list = document.getElementById('ordersList');
-    if (!list) return;
-    list.innerHTML = '<div style="padding:40px; text-align:center;"><div class="spinner" style="margin:0 auto 15px;"></div><p>Fetching your latest orders...</p></div>';
-    try {
-        const q = query(
-            collection(db, "orders"), 
-            where("userId", "==", user.uid)
-        );
-        onSnapshot(q, (snap) => {
-            const myOrders = snap.docs.map(doc => ({id: doc.id, ...doc.data()})).sort((a,b) => new Date(b.orderDate) - new Date(a.orderDate));
-            if(myOrders.length === 0) { 
-                list.innerHTML = `
-                    <div style="text-align:center; padding:100px 20px;">
-                        <img src="o.png" width="180">
-                        <h3 style="margin-top:20px; color:#212121;">No orders found!</h3>
-                        <p style="color:#878787; font-size:14px; margin-top:8px;">You haven't placed any orders yet. Start shopping!</p>
-                        <button class="view-all" style="margin-top:20px;" onclick="showSection('home')">Shop Now</button>
-                    </div>`; 
-                return; 
-            }
-            list.innerHTML = myOrders.map(o => {
-                const oDate = o.orderDate ? new Date(o.orderDate) : new Date();
-                const displayDate = oDate.toLocaleDateString(undefined, {year:'numeric', month:'short', day:'numeric'});
-                const diffHours = (new Date() - oDate) / (1000 * 60 * 60);
-                const canCancel = diffHours < 24 && (o.status === 'Ordered' || !o.status);
-                
-                let statusClass = "status-ordered";
-                let statusMsg = o.status || 'Ordered';
-                let statusDot = "#2874f0";
-                
-                if(o.status === 'Cancelled') { statusClass = "status-cancelled"; statusDot = "#d32f2f"; }
-                if(o.status === 'Cancellation Requested') { statusClass = "status-requested"; statusDot = "#ff9800"; }
-                if(o.status === 'Out for Delivery') { statusClass = "status-out"; statusDot = "#f57f17"; }
-                if(o.status === 'Delivered') { statusClass = "status-delivered"; statusDot = "#388e3c"; }
-
-                return `
-                <div class="order-item-card shopsy-order-premium">
-                    <div class="order-card-header">
-                        <div class="order-meta">
-                            <span class="order-id">ORDER ID: #${(o.id || 'N/A').substring(0,10).toUpperCase()}</span>
-                            <span class="order-date"><i class="fa fa-calendar-alt"></i> ${displayDate}</span>
-                        </div>
-                        <div class="order-badge ${statusClass}">
-                            <span class="status-dot-large" style="background:${statusDot};"></span>
-                            ${statusMsg}
-                        </div>
-                    </div>
-                    <div class="order-body">
-                        <img src="${o.productImage || 'A.png'}" class="order-prod-img" onerror="this.src='A.png'">
-                        <div class="order-details-main">
-                            <h4 class="order-title">${o.productTitle || 'Product Details Not Available'}</h4>
-                            <div class="order-pricing">₹${o.productPrice || '0'} | <span class="pay-method-badge">${o.paymentMethod || 'N/A'}</span></div>
-                            <div class="delivery-estimate-order">Expected by ${o.deliveryEstimate || 'Soon'}</div>
-                            ${(o.deliveryOtp && o.status !== 'Delivered' && o.status !== 'Cancelled') ? `<div class="otp-badge-v2">Delivery OTP: <b>${o.deliveryOtp}</b></div>` : ''}
-                        </div>
-                    </div>
-                    <div class="order-actions-bottom">
-                         ${canCancel ? `<button class="order-action-btn cancel-trigger" onclick="requestCancel('${o.id}')">Request Cancellation</button>` : ''}
-                         <button class="order-action-btn" onclick="viewProduct('${o.productId}')">View Product</button>
-                         <button class="order-action-btn help-btn" onclick="alert('Support: stallcart.in@gmail.com')">Need Help?</button>
-                    </div>
-                </div>`;
-            }).join('');
-        });
-    } catch(e) { list.innerHTML = '<div style="text-align:center; padding:50px; color:#d10000;">Failed to load orders. Please try again.</div>'; }
-};
-
-window.requestCancellation = async (orderId) => {
-    if(!confirm('Are you sure you want to request cancellation for this order? This action can be performed only within 24 hours of placement.')) return;
-    showLoading("Sending Cancellation Request...");
-    try {
-        await updateDoc(doc(db, "orders", orderId), { status: 'Cancellation Requested' });
-        setTimeout(() => {
-            hideLoading();
-            showToast("Cancellation Request Sent Successfully! Status will update shortly.");
-        }, 1500);
-    } catch(e) { 
-        hideLoading();
-        console.error(e);
-        alert('Cancellation failed: ' + e.message); 
-    }
-};
-
-window.removeFromCart = (index) => {
-    cart.splice(index, 1);
-    updateCartCount();
-    renderCart();
-};
-
-document.getElementById('cartPlaceOrderBtn')?.addEventListener('click', () => {
-    if(cart.length > 0) { checkoutItems = [...cart]; startCheckout(); }
-});
-
-const startCheckout = async () => {
-    const user = auth.currentUser;
-    if(!user) { modal.style.display='flex'; return; }
-    
-    showLoading("Preparing Checkout Bag...");
-    try {
-        const docSnap = await getDoc(doc(db, "users", user.uid));
-        const userData = docSnap.data();
-        
-        if (!isAddressComplete(userData)) {
-            hideLoading();
-            showToast('Shipping profile incomplete. Please fill address to continue.', "info");
-            document.getElementById('profileSetupModal').style.display = 'flex';
-            return;
-        }
-
-        showSection('checkout');
-        
-        // Address Step - Full Details
-        const searchInput = document.getElementById('searchInput');
-        if (searchInput) {
-            searchInput.placeholder = "Search for Products, Brands and More";
-            if (searchInput.value.includes('@')) searchInput.value = ''; 
-        }
-        const addrDiv = document.getElementById('checkoutAddress');
-        if(userData && userData.address) {
-            const addr = userData.address;
-            addrDiv.innerHTML = `
-                <div class="checkout-address-card">
-                    <div class="user-main-info">
-                        <strong>${addr.firstName} ${addr.lastName}</strong>
-                        <span class="addr-label">HOME</span>
-                    </div>
-                    <p class="full-addr-text">${addr.address}, ${addr.apartment ? addr.apartment + ', ' : ''} ${addr.city}, ${addr.state} - <strong>${addr.postalCode}</strong></p>
-                    <p class="contact-info"><strong>Phone:</strong> ${addr.phone}</p>
-                    <button class="premium-edit-btn" id="editCheckoutAddr">
-                        <i class="fa fa-edit"></i> CHANGE OR EDIT ADDRESS
-                    </button>
-                    <div class="trust-strip">
-                        <i class="fa fa-shield-alt"></i> 100% Genuine and Safe delivery guaranteed
-                    </div>
+            <div class="search-container">
+                <div class="search-box">
+                    <i class="fa fa-search search-icon"></i>
+                    <input type="text" id="mainSearchInput" placeholder="Search for products, brands and more" autocomplete="off">
                 </div>
-            `;
-            document.getElementById('editCheckoutAddr').addEventListener('click', () => {
-                document.getElementById('modalManageSection').style.display = 'none';
-                document.getElementById('profileSetupModal').style.display = 'flex';
-            });
-        }
-        
-        if(!checkoutItems || checkoutItems.length === 0) {
-            hideLoading();
-            showToast("No items found to checkout.", "error");
-            return;
-        }
-
-        // Summary Step
-        const summDiv = document.getElementById('checkoutSummary');
-        if(!summDiv) throw new Error("Checkout Summary element not found");
-        
-        summDiv.innerHTML = `
-            <div class="checkout-summary-container">
-            ${checkoutItems.filter(p => p).map(p => {
-                const price = parseFloat(p.price) || 0;
-                const oldPrice = parseFloat(p.oldPrice) || (price * 1.5);
-                return `
-                    <div class="checkout-product-item-v2">
-                        <div class="checkout-prod-left">
-                            <img src="${p.imageUrl || p.img}" class="checkout-product-img-v2">
-                            <div class="qty-badge">1</div>
-                        </div>
-                        <div class="checkout-info">
-                            <h4>${p.title || p.name}</h4>
-                            <p class="seller-info">Stallcart Elite Seller</p>
-                            <div class="checkout-price-row">
-                                <span class="current-price">₹${price}</span>
-                                <span class="old-price">₹${oldPrice.toFixed(0)}</span>
-                                <span class="discount-tag">NEW DEAL</span>
-                            </div>
-                            <div class="badge-row">
-                                <span class="badge delivery-badge"><i class="fa fa-truck"></i> Free Delivery by ${getDeliveryDate(12)}</span>
-                                ${p.isAssured ? '<span class="badge assured-badge">STALLCART ASSURED</span>' : ''}
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }).join('')}
-            </div>
-        `;
-
-        // Update Payment Step Final Amount
-        const total = checkoutItems.reduce((acc, p) => acc + (p ? parseFloat(p.price) : 0), 0);
-        const payFinalAmtElV5 = document.getElementById('payFinalAmountV5');
-        if(payFinalAmtElV5) payFinalAmtElV5.textContent = `₹${total}`;
-
-        // V5 Selection Interaction
-        const allMethods = document.querySelectorAll('.pay-method-row');
-        allMethods.forEach(row => {
-            row.onclick = () => {
-                allMethods.forEach(r => r.classList.remove('active'));
-                row.classList.add('active');
-                window.selectedPayMethod = row.dataset.method;
-                const titleNode = row.querySelector('.pay-main-title');
-                window.detailedPayMethod = titleNode ? titleNode.textContent.trim() : 'Method';
-            };
-        });
-
-        // Setup COD Availability
-        const codDisabled = checkoutItems.some(p => p.hasCOD === false);
-        const codRow = document.querySelector('.pay-method-row[data-method="COD"]');
-        const onlineOption = document.getElementById('onlinePayOption');
-
-        if (codRow) {
-            if (codDisabled) {
-                codRow.style.opacity = '0.4';
-                codRow.style.pointerEvents = 'none';
-                const subNode = codRow.querySelector('.pay-sub-text');
-                if (subNode) subNode.innerHTML = '<span style="color:#d32f2f; font-weight:bold;">Not Available for selected items</span>';
-            } else {
-                codRow.style.opacity = '1';
-                codRow.style.pointerEvents = 'auto';
-                const subNode = codRow.querySelector('.pay-sub-text');
-                if (subNode) subNode.innerText = 'Safe and Reliable Delivery';
-            }
-        }
-        
-        if (onlineOption) onlineOption.click(); // Default to online
-        
-    } catch(e) { 
-        console.error("Checkout Preparation Error:", e); 
-        showToast("Checkout Error: " + e.message, "error");
-    }
-    hideLoading();
-};
-
-document.getElementById('finishOrderBtn')?.addEventListener('click', async () => {
-    const user = auth.currentUser;
-    if(!user) return;
-    
-    const payMethod = window.selectedPayMethod || 'ONLINE';
-    const detailedMethod = window.detailedPayMethod || 'Online';
-    
-    showLoading("Finalizing Order...");
-    try {
-        const docSnap = await getDoc(doc(db, "users", user.uid));
-        const userData = docSnap.data();
-        
-        let totalAmount = 0;
-        checkoutItems.forEach(p => totalAmount += parseFloat(p.price));
-
-        if (payMethod === 'ONLINE') {
-            hideLoading();
-            // Razorpay Payment Logic
-            const options = {
-                "key": "rzp_live_SYuATabBV5Nnb8",
-                "amount": totalAmount * 100,
-                "currency": "INR",
-                "name": "Stallcart",
-                "description": "Premium Shopping Experience",
-                "image": "logo.png",
-                "handler": async function (response) {
-                    showLoading("Payment Successful! Processing Order...");
-                    await saveOrders(user.uid, userData, `Online (${detailedMethod})`, response.razorpay_payment_id);
-                },
-                "prefill": {
-                    "name": userData.displayName || user.displayName,
-                    "email": user.email,
-                    "contact": userData.phoneNumber || userData.address?.phone || ""
-                },
-                "theme": { "color": "#000000" }
-            };
-            const rzp = new Razorpay(options);
-                rzp.on('payment.failed', function (response) {
-                    showToast("Payment Failed: " + response.error.description, "error");
-                });
-                rzp.open();
-        } else {
-            // Cash on Delivery Logic
-            await saveOrders(user.uid, userData, 'COD (Pending)', 'N/A');
-        }
-    } catch(e) { 
-        hideLoading();
-        showToast('Order Error: ' + e.message, "error"); 
-    }
-});
-
-const saveOrders = async (userId, userData, payMethod, paymentId) => {
-    try {
-        for(let p of checkoutItems) {
-            const deliveryOtp = Math.floor(100000 + Math.random() * 900000);
-            const orderData = {
-                userId: userId,
-                userName: userData.displayName || auth.currentUser.displayName,
-                userEmail: auth.currentUser.email,
-                address: userData.address || {},
-                productId: p.id,
-                productTitle: p.title || p.name,
-                productPrice: p.price,
-                productImage: p.imageUrl || p.img,
-                selectedSize: p.selectedSize || 'N/A',
-                orderDate: new Date().toISOString(),
-                status: 'Ordered',
-                deliveryOtp: deliveryOtp,
-                deliveryEstimate: getDeliveryDate(12),
-                paymentMethod: payMethod,
-                paymentId: paymentId
-            };
-            await addDoc(collection(db, "orders"), orderData);
-            
-            // Remove from cart if it was there
-            const cartIdx = cart.findIndex(item => item.id === p.id);
-            if(cartIdx > -1) cart.splice(cartIdx, 1);
-        }
-        
-        updateCartCount();
-        checkoutItems = [];
-        hideLoading();
-        showToast('Congratulations! Your order has been placed successfully.', 'success');
-        showSection('home');
-    } catch (e) {
-        hideLoading();
-        showToast("Error saving order: " + e.message, "error");
-    }
-};
-
-// Cartesian click
-document.querySelector('.cart-container')?.addEventListener('click', () => showSection('cart'));
-
-function renderProducts() {
-    const grid = document.getElementById('dynamicProductGrid');
-    const hPage = document.getElementById('homePage');
-    if (!grid || (hPage && hPage.style.display === 'none')) return;
-    
-    const isSearch = searchQuery.trim() !== '';
-    const queryStr = searchQuery.toLowerCase().trim();
-    const keywords = queryStr.split(/\s+/);
-
-    const filterFn = (p) => {
-        if (!isSearch) return true;
-        const title = (p.title || p.name || "").toLowerCase();
-        const desc = (p.desc || "").toLowerCase();
-        const cat = (p.category || "").toLowerCase();
-        const brand = (p.brand || "").toLowerCase();
-        const model = (p.modelName || "").toLowerCase();
-        const material = (p.material || "").toLowerCase();
-        return keywords.some(k => 
-            title.includes(k) || desc.includes(k) || cat.includes(k) || 
-            brand.includes(k) || model.includes(k) || material.includes(k)
-        );
-    };
-
-    grid.style.display = 'block';
-    grid.className = 'home-sections-container';
-    let html = '';
-    let firstMatchSectionId = null;
-    
-    // 1. Top Deals
-    const topDeals = products.filter(p => p.category === 'top' && filterFn(p));
-    if(topDeals.length > 0) {
-        if (!firstMatchSectionId) firstMatchSectionId = 'section_top';
-        html += `<div class="hp-cat-section" id="section_top">
-            <div class="hp-cat-header"><span class="live-dot-pulse"></span> ✨ TOP STEALS OF THE DAY</div>
-            <div class="hp-product-grid">${renderCardSet(topDeals)}</div>
-        </div>`;
-    }
-
-    // 2. Dynamic Categories
-    categories.forEach(cat => {
-        if (cat.id === 'top' || cat.firestoreId === 'top') return;
-
-        const mainId = cat.id || cat.firestoreId; // Use ID first because products are mapped out with ID (e.g. 'men') in firestore
-        let catProds = products.filter(p => (p.category || "").startsWith(mainId));
-        
-        if (activeSubcat && (activeCat === mainId)) {
-            catProds = catProds.filter(p => p.category === `${mainId}_${activeSubcat}` || p.category === activeSubcat);
-        }
-
-        const finalProds = catProds.filter(filterFn);
-
-        if(!isSearch || finalProds.length > 0) {
-            if (isSearch && !firstMatchSectionId) firstMatchSectionId = `section_${mainId}`;
-            
-            let subHtml = '';
-            if (!isSearch && cat.subCategories && cat.subCategories.length > 0) {
-                subHtml = `<div class="hp-subcat-bar">
-                    <div class="hp-sub-chip ${activeCat === mainId && !activeSubcat ? 'active' : ''}" 
-                         onclick="selectCategory('${mainId}')">ALL</div>
-                    ${cat.subCategories.map(sub => `
-                        <div class="hp-sub-chip ${activeCat === mainId && activeSubcat === sub.id ? 'active' : ''}" 
-                             onclick="selectSubCategory('${mainId}', '${sub.id}')">
-                             ${sub.label}
-                        </div>
-                    `).join('')}
-                </div>`;
-            }
-
-            html += `<div class="hp-cat-section" id="section_${mainId}">
-                <div class="hp-cat-header">${isSearch ? `RESULTS IN ${cat.label.toUpperCase()}` : cat.label.toUpperCase()}</div>
-                ${subHtml}
-                <div class="hp-product-grid">
-                    ${finalProds.length > 0 ? renderCardSet(finalProds) : `<div class="empty-sub">No items available in this category yet.</div>`}
-                </div>
-            </div>`;
-        }
-    });
-
-    grid.innerHTML = html || `<div class="premium-empty-state"><h2>Listing Products...</h2></div>`;
-
-    // 3. AUTO-SCROLL TO FIRST MATCH
-    if (isSearch && firstMatchSectionId) {
-        const el = document.getElementById(firstMatchSectionId);
-        if (el) {
-            const top = el.getBoundingClientRect().top + window.pageYOffset - 150; // More offset
-            window.scrollTo({ top, behavior: 'smooth' });
-        }
-    }
-}
-
-function renderCardSet(set) {
-    return set.map(p => {
-        const price = parseFloat(p.price) || 0;
-        const oldPrice = parseFloat(p.oldPrice) || (price * 1.5);
-        const discount = Math.round(((oldPrice - price) / oldPrice) * 100);
-        const rating = (Math.random() * (4.5 - 3.5) + 3.5).toFixed(1); // Simulated rating
-        
-        return `<div class="product-card-shopy" onclick="viewProduct('${p.id}')">
-            <div class="shopy-img-container">
-                <img src="${p.imageUrl || p.img}" alt="${p.title || p.name}" class="product-image">
-                <div class="shopy-rating-badge">${rating} <i class="fa fa-star"></i></div>
-            </div>
-            <div class="shopy-info">
-                <h3 class="shopy-title">${p.title || p.name}</h3>
-                <div class="shopy-price-row">
-                    <span class="shopy-discount">${discount}% off</span>
-                    <span class="shopy-price">₹${price}</span>
-                </div>
-                <div class="shopy-badge-row">
-                    ${p.isAssured ? `<span class="shopy-tag green"><i class="fa fa-layer-group"></i> Min 2 items</span>` : `<span class="shopy-tag purple">Bestseller</span>`}
+                <div id="searchSuggestions" class="search-suggestions" style="display: none;">
+                    <!-- Filled by JS -->
                 </div>
             </div>
-        </div>`;
-    }).join('');
-}
-
-window.selectProductSize = (el) => {
-    document.querySelectorAll('.size-chip').forEach(c => c.classList.remove('active'));
-    el.classList.add('active');
-    document.getElementById('selectedProductSize').value = el.dataset.size;
-};
-
-window.addToCart = (id) => {
-    const p = products.find(prod => prod.id === id);
-    if (!p) return;
-    
-    // Check for size selection if available
-    const sizeInput = document.getElementById('selectedProductSize');
-    if (sizeInput && !sizeInput.value) {
-        showToast("Please select a size first!", "info");
-        return;
-    }
-    const selectedSize = sizeInput ? sizeInput.value : null;
-
-    let cart = JSON.parse(localStorage.getItem('cart') || '[]');
-    const existing = cart.find(item => item.id === id && item.selectedSize === selectedSize);
-    if (existing) existing.quantity++;
-    else cart.push({ ...p, quantity: 1, selectedSize });
-    
-    localStorage.setItem('cart', JSON.stringify(cart));
-    updateCartCount();
-    showToast("Added to Cart!", "success");
-};
-
-window.viewProduct = (id) => {
-    if (!auth.currentUser) { modal.style.display = "block"; return; }
-    const p = products.find(prod => prod.id === id);
-    if (!p) return;
-    showSection('product');
-    
-    const price = parseFloat(p.price) || 0;
-    const oldPrice = parseFloat(p.oldPrice) || (price * 1.5);
-    const discount = Math.round(((oldPrice - price) / oldPrice) * 100);
-    
-    const breadcrumbs = `<div class="breadcrumbs">
-        <span onclick="showSection('home')">Home</span> > 
-        <span>${p.category || 'Deals'}</span> > 
-        <span>${p.title}</span>
-    </div>`;
-
-    document.getElementById("productDetails").innerHTML = `
-        <div class="product-images">
-            <div class="image-premium-container">
-                <img src="${p.imageUrl || p.img}" alt="${p.title || p.name}" class="main-product-img">
-                <div class="zoom-indicator"><i class="fa fa-maximize"></i> Tap to expand</div>
+            <div class="header-actions">
+                <div id="authSection">
+                    <button class="login-btn" id="openModal">Login</button>
+                </div>
+                <div class="cart-container">
+                    <i class="fa-solid fa-cart-shopping"></i>
+                    <span class="cart-text">Cart</span>
+                    <span class="cart-count">0</span>
+                </div>
             </div>
         </div>
-        <div class="product-details-info">
-            ${breadcrumbs}
-            <h1 class="product-title-premium">${p.title || p.name}</h1>
+    </header>
+
+    <nav class="categories-nav" id="mainCatsNav">
+        <!-- Will be filled by JS -->
+    </nav>
+
+    <main class="container" id="homePage">
+        
+        <section class="main-banner" id="promoBanner">
+            <div class="banner-text">
+                <div class="banner-top-badge" id="bannerTopBadge">SUMMER COLLECTION 2026</div>
+                <div class="banner-badge" id="bannerBadge">TRENDING 2026</div>
+                <h1 id="bannerTitle">ELITE<br>FASHION.</h1>
+                <p id="bannerDesc">From the grace of Sarees to the edge of Modern Shirts. Discover curated pieces that define your style.</p>
+                <div class="banner-actions">
+                    <button class="banner-action-btn" id="bannerActionBtn" onclick="selectCategory('top')">Shop Latest Collection</button>
+                    <span class="limited-tag" id="bannerLimitedTag">LIMITED EDITION</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Dynamic Category Section -->
+        <section class="category-block" id="dynamicSection">
+            <div class="search-results-metadata" id="searchHeader" style="display: none;">
+                <div class="search-breadcrumbs" id="searchBreadcrumbs">Home / Search Results</div>
+                <div class="search-title-row">
+                    <h2 id="searchQueryTitle">Search Results</h2>
+                    <span class="product-count-text" id="productCountText">(Showing 0 products)</span>
+                </div>
+                <div class="search-sort-bar">
+                    <span class="sort-label">Sort By</span>
+                    <button class="sort-btn active" data-sort="relevance">Relevance</button>
+                    <button class="sort-btn" data-sort="popularity">Popularity</button>
+                    <button class="sort-btn" data-sort="priceLow">Price -- Low to High</button>
+                    <button class="sort-btn" data-sort="priceHigh">Price -- High to Low</button>
+                    <button class="sort-btn" data-sort="newest">Newest First</button>
+                </div>
+            </div>
+
+            <div class="section-header" id="dynamicHeader">
+                <h2>Deals of the Day</h2>
+                <div class="deals-timer-container" id="timerGroup">
+                    <i class="fa-regular fa-clock"></i>
+                    <span id="dealsTimer">23h : 59m : 55s</span>
+                </div>
+                <button class="view-all">View All</button>
+            </div>
             
-            <div class="rating-strip">
-                <div class="product-rating">4.3 <i class="fa fa-star"></i></div>
-                <span class="rating-count">1,248 Ratings & 458 Reviews</span>
-                ${p.isAssured ? `<img src="A.png" class="assured-tag-img" alt="Assured">` : ''}
+            <div class="subcat-nav" id="dynamicSubNav" style="display: none;">
+                <!-- Sub categories here -->
             </div>
-            
-            <div class="product-price-block">
-                <span class="special-price-tag">Exclusive Price</span>
-                <div class="price-row-v2">
-                    <span class="current-price">₹${price}</span> 
-                    <span class="original-price">₹${oldPrice.toFixed(0)}</span> 
-                    <span class="percentage-green">${discount}% Off</span>
+
+            <div class="product-grid" id="dynamicProductGrid"></div>
+        </section>
+    </main>
+
+    <!-- Product Management Page (Shopsy Style) -->
+    <main class="container" id="productPage" style="display: none;">
+        <button class="back-btn" onclick="showSection('home')"><i class="fa fa-arrow-left"></i> BACK</button>
+        <div id="productDetails" class="product-wrapper">
+            <!-- Filled by JS -->
+        </div>
+        
+        <!-- Similar Products Section -->
+        <div class="similar-products-container">
+            <h3 class="section-title">Similar Products</h3>
+            <div class="product-grid" id="similarProductsGrid">
+                <!-- Filled by JS -->
+            </div>
+        </div>
+    </main>
+
+    <!-- Cart Page -->
+    <main class="container" id="cartPage" style="display: none;">
+        <button class="back-btn" onclick="showSection('home')"><i class="fa fa-arrow-left"></i> BACK TO SHOPPING</button>
+        <div class="cart-layout">
+            <div class="cart-items-section">
+                <h3>My Cart (<span id="cartTotalCount">0</span>)</h3>
+                <div id="cartItemsList">
+                    <!-- Cart items here -->
                 </div>
             </div>
-
-            <!-- Authentic Trust Symbols -->
-            <div class="trust-icons-horizontal">
-                ${p.returnable === false ? 
-                    `<div class="trust-item"><i class="fa fa-times-circle" style="color:#d32f2f;"></i> <span style="color:#d32f2f; text-decoration:line-through;">7 Day Return</span></div>` : 
-                    `<div class="trust-item"><i class="fa fa-rotate-left"></i> <span>7 Day Return</span></div>`
-                }
-                ${p.hasCOD === false ? 
-                    `<div class="trust-item"><i class="fa fa-times-circle" style="color:#d32f2f;"></i> <span style="color:#d32f2f; text-decoration:line-through;">COD Available</span></div>` : 
-                    `<div class="trust-item"><i class="fa fa-money-bill-1"></i> <span>COD Available</span></div>`
-                }
-                <div class="trust-item"><i class="fa fa-shield-check"></i> <span>Trusted Quality</span></div>
+            <div class="price-details-section">
+                <h3>Price Details</h3>
+                <div class="price-row"><span>Price (<span id="itemQty">0</span> items)</span> <span id="totalMRP">₹0</span></div>
+                <div class="price-row"><span>Discount</span> <span class="green-text" id="totalDiscount">-₹0</span></div>
+                <div class="price-row"><span>Delivery Charges</span> <span class="green-text">FREE</span></div>
+                <hr>
+                <div class="price-row final-price"><span>Total Amount</span> <span id="finalCartAmount">₹0</span></div>
+                <button class="place-order-btn" id="cartPlaceOrderBtn">PLACE ORDER</button>
             </div>
+        </div>
+    </main>
 
-            <!-- Highlights -->
-            <div class="highlights-section-v2">
-                <h4>Product Highlights</h4>
-                <div class="highlight-grid">
-                    <div class="highlight-point"><i class="fa fa-circle-check"></i> Premium Grade Material</div>
-                    <div class="highlight-point"><i class="fa fa-circle-check"></i> Stallcart Elite Design</div>
-                    <div class="highlight-point"><i class="fa fa-circle-check"></i> Comfort & Durability</div>
-                    <div class="highlight-point"><i class="fa fa-circle-check"></i> Breathable Fabric</div>
+    <!-- Checkout Page -->
+    <main class="container" id="checkoutPage" style="display: none;">
+        <button class="back-btn" onclick="showSection('home')"><i class="fa fa-arrow-left"></i> BACK</button>
+        <div class="checkout-grid">
+            <div class="step-card" id="step1">
+                <div class="step-header"><span>1</span> Delivery Address</div>
+                <div class="step-content" id="checkoutAddress">
+                    <!-- User address here -->
                 </div>
             </div>
-
-            ${p.sizes && p.sizes.length > 0 ? `
-            <div class="product-size-section" style="margin-top:20px; text-align:left;">
-                <h4 style="font-size:14px; margin-bottom:10px;">Select Size:</h4>
-                <div class="size-options" style="display:flex; gap:10px; flex-wrap:wrap;">
-                    ${p.sizes.map(size => `<button class="size-chip" data-size="${size}" onclick="selectProductSize(this)" style="padding:8px 15px; border:1px solid #ccc; background:#fff; border-radius:4px; cursor:pointer;">${size}</button>`).join('')}
+            <div class="step-card" id="step2">
+                <div class="step-header"><span>2</span> Order Summary</div>
+                <div class="step-content" id="checkoutSummary">
+                    <!-- Order Items here -->
                 </div>
-                <input type="hidden" id="selectedProductSize" value="">
-            </div>` : `<input type="hidden" id="selectedProductSize" value="N/A">`}
+            </div>
+            <div class="step-card" id="step3">
+                <div class="step-header"><span>3</span> Select Payment Method</div>
+                <div class="step-content no-padding">
+                    <!-- Secure Strip -->
+                    <div class="secure-strip-v5">
+                        <i class="fa-solid fa-shield-check"></i>
+                        <span>100% SECURE SSL ENCRYPTED TRANSACTION VIA RAZORPAY</span>
+                    </div>
 
-            <!-- Specifications -->
-            <div class="product-specs-premium">
-                <h3 class="specs-title">System Specifications</h3>
-                <div class="specs-grid">
-                    <div class="spec-tile">
-                        <span class="label">Model Name</span>
-                        <span class="value">${p.modelName || p.title || p.name}</span>
+                    <!-- Available Methods -->
+                    <div class="payment-sheet">
+                        <!-- Razorpay / Online (Only for logged in) -->
+                        <div class="pay-method-row active" data-method="ONLINE" id="onlinePayOption">
+                            <div class="pay-method-info">
+                                <div class="pay-icon-circle"><img src="https://upload.wikimedia.org/wikipedia/commons/e/e1/Google_Pay_Logo.svg" alt="UPI"></div>
+                                <div class="pay-text-group">
+                                    <div class="pay-main-title">Online Payment / UPI</div>
+                                    <div class="pay-sub-text">GPay, PhonePe, Cards, NetBanking</div>
+                                    <div class="pay-badge-v5 green">FLAT ₹50 INSTANT OFF</div>
+                                </div>
+                            </div>
+                            <div class="pay-selector-radio"><div class="inner-dot"></div></div>
+                        </div>
+
+                        <!-- COD -->
+                        <div class="pay-method-row" data-method="COD">
+                            <div class="pay-method-info">
+                                <div class="pay-icon-circle gray"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+                                <div class="pay-text-group">
+                                    <div class="pay-main-title">Cash on Delivery (COD)</div>
+                                    <div class="pay-sub-text">Safe and Reliable Delivery</div>
+                                </div>
+                            </div>
+                            <div class="pay-selector-radio"><div class="inner-dot"></div></div>
+                        </div>
                     </div>
-                    <div class="spec-tile">
-                        <span class="label">Brand</span>
-                        <span class="value">${p.brand || "Stallcart Elite"}</span>
+
+                    <!-- Final Action Bar -->
+                    <div class="pay-action-bar-v5">
+                        <div class="pay-total-v5">
+                            <span class="total-label">Total Payable</span>
+                            <div class="total-price-v5" id="payFinalAmountV5">₹0</div>
+                        </div>
+                        <button class="pay-submit-btn-v5" id="finishOrderBtn">
+                            PLACE ORDER <i class="fa fa-arrow-right"></i>
+                        </button>
                     </div>
-                    <div class="spec-tile">
-                        <span class="label">Material</span>
-                        <span class="value">${p.material || "Premium Selection"}</span>
-                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- Orders Page -->
+    <main class="container" id="ordersPage" style="display: none;">
+        <button class="back-btn" onclick="showSection('home')" style="margin-bottom:20px; display:block;"><i class="fa fa-arrow-left"></i> BACK TO SHOPPING</button>
+        <div class="orders-header-v2" style="margin-bottom:30px; border-bottom:1px solid #eee; padding-bottom:15px;">
+            <h1 style="font-size:24px; color:#212121; display:flex; align-items:center; gap:12px;"><i class="fa fa-boxes-packing" style="color:#2874f0;"></i> My Orders</h1>
+            <p style="color:#878787; font-size:14px; margin-top:5px;">Check status and manage your recent purchases</p>
+        </div>
+        <div id="ordersList" class="orders-list-v2">
+            <!-- Filled by JS -->
+        </div>
+    </main>
+
+    <!-- Profile Setup Modal -->
+    <div id="profileSetupModal" class="modal profile-modal" style="display: none;">
+        <div class="modal-content profile-setup-content">
+            <div class="modal-header">
+                <h2>Set up your Profile</h2>
+                <button class="skip-btn" id="skipProfile">Skip for now</button>
+            </div>
+            <div class="profile-setup-body">
+                <div class="setup-section" id="modalManageSection">
+                    <h3>Manage Profile</h3>
+                    <input type="text" id="profDisplayName" placeholder="Display Name">
+                    <input type="tel" id="profPhone" placeholder="Primary Phone Number">
+                    <button class="action-btn orange-btn" id="savePersonalInfo">Save Profile Settings</button>
                 </div>
                 
-                <div class="description-block">
-                    <div class="read-more-wrapper">
-                        <p class="description-text desc-content">${p.desc || "Experience the pinnacle of luxury with this premium product, exclusively curated by Stallcart for those who value style and exceptional quality."}</p>
-                        <button class="read-more-btn" onclick="toggleReadMore(this)">READ MORE <i class="fa fa-chevron-down"></i></button>
+                <div class="setup-section" id="modalAddressSection">
+                    <h3>Shipping Address Details</h3>
+                    <div class="form-row">
+                        <input type="text" id="profFirstName" placeholder="First Name">
+                        <input type="text" id="profLastName" placeholder="Last Name">
                     </div>
+                    <input type="tel" id="addrPhone" placeholder="Contact Phone for Shipping">
+                    <input type="text" id="addrLine1" placeholder="Address">
+                    <input type="text" id="addrLine2" placeholder="Apartment, suite, etc.">
+                    <div class="form-row">
+                        <input type="text" id="addrPostal" placeholder="Postal code">
+                        <input type="text" id="addrCity" placeholder="City">
+                    </div>
+                    <div class="form-row">
+                        <input type="text" id="addrDistrict" placeholder="District">
+                        <input type="text" id="addrState" placeholder="State">
+                    </div>
+                    <div class="form-group">
+                        <label>Country/region</label>
+                        <select id="addrCountry" disabled>
+                            <option value="India" selected>India</option>
+                        </select>
+                    </div>
+                    <button class="action-btn orange-btn" id="saveAddressInfo">Save Address</button>
                 </div>
             </div>
+        </div>
+    </div>
 
-            <div class="sticky-action-buttons">
-                <button class="action-btn buy-now-premium" id="buyNowBtn">
-                    <i class="fa fa-bolt"></i> BUY NOW
-                </button>
-                <button class="action-btn add-to-cart-premium" id="addToCartBtn">
-                    <i class="fa-solid fa-cart-shopping"></i> ADD TO CART
-                </button>
+    <!-- Policy Viewer Modal -->
+    <div id="policyModal" class="modal" style="display: none;">
+        <div class="modal-content" style="width: 800px; max-width: 90vw; height: 600px; max-height: 90vh; flex-direction: column; padding: 20px;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 15px;">
+                <h2 id="policyTitle" style="color: #212121;">Policy Details</h2>
+                <span class="close" onclick="document.getElementById('policyModal').style.display='none'">&times;</span>
             </div>
-        </div>`;
-    
-    document.getElementById('buyNowBtn').onclick = () => {
-        checkoutItems = [p];
-        startCheckout();
-    };
-    
-    document.getElementById('addToCartBtn').onclick = () => {
-        cart.push(p);
-        updateCartCount();
-        showToast("Added to Cart!");
-    };
+            <div id="policyContent" style="margin-top: 20px; overflow-y: auto; line-height: 1.8; color: #444; font-size: 14px; text-align: left; padding-right: 15px;">
+                <!-- Detailed Policy Text Here -->
+            </div>
+        </div>
+    </div>
 
-    // Render Similar Products
-    const simGrid = document.getElementById('similarProductsGrid');
-    if (simGrid) {
-        const sim = products.filter(item => item.category === p.category && item.id !== p.id);
-        simGrid.innerHTML = sim.length > 0 ? sim.map(item => `
-            <div class="product-card" onclick="viewProduct('${item.id}')">
-                <img src="${item.imageUrl || item.img}" alt="${item.title || item.name}" class="product-image">
-                <div class="product-info">
-                    <h3>${item.title || item.name}</h3>
-                    <div class="price-tag"><b>₹${item.price}</b></div>
-                </div>
-            </div>`).join('') : '<p style="padding:20px;">No similar products found.</p>';
-    }
-};
-
-// ---------------------------
-// EVENT LISTENERS (CLICK)
-// ---------------------------
-document.addEventListener('click', (e) => {
-    if (e.target.id === 'openModal') {
-        modal.style.display = "flex";
-        document.getElementById("loginView").style.display = "block";
-        document.getElementById("signupView").style.display = "none";
-        document.getElementById("modalTitle").textContent = "Login";
-    }
-    if (e.target.id === 'closeModal') modal.style.display = "none";
-    if (e.target.id === 'toSignup') {
-        document.getElementById("loginView").style.display = "none";
-        document.getElementById("signupView").style.display = "block";
-        document.getElementById("modalTitle").textContent = "Create Account";
-    }
-    if (e.target.id === 'toLogin') {
-        document.getElementById("signupView").style.display = "none";
-        document.getElementById("loginView").style.display = "block";
-        document.getElementById("modalTitle").textContent = "Login";
-    }
-    const gBtn = e.target.closest('#googleBtn') || e.target.closest('#googleBtnSignup');
-    if (gBtn) {
-        if (isAuthProcessing) return;
-        isAuthProcessing = true;
-        showLoading("Signing in with Google...");
-        signInWithPopup(auth, provider)
-            .then(() => {
-                modal.style.display = "none";
-            })
-            .catch(err => {
-                if (err.code !== 'auth/cancelled-popup-request' && err.code !== 'auth/popup-closed-by-user') {
-                    showToast(err.message, "error");
-                }
-            })
-            .finally(() => {
-                isAuthProcessing = false;
-                hideLoading();
-            });
-    }
-    if (e.target.id === 'logout' || e.target.closest('#logoutBtnMain')) signOut(auth).then(() => location.reload());
-    if (e.target.classList.contains('logo') || e.target.classList.contains('back-btn')) showSection('home');
-
-    const menuBtn = e.target.closest('#userMenuBtn');
-    const menu = document.getElementById('userMenuContent');
-    if (menuBtn) menu.style.display = (menu.style.display === 'none') ? 'block' : 'none';
-    else if (menu && !e.target.closest('.user-dropdown')) menu.style.display = 'none';
-    if (e.target.id === 'goToProfile' || e.target.closest('#goToProfile')) showSection('profile');
-    if (e.target.id === 'goToOrders' || e.target.closest('#goToOrders')) showSection('orders');
-});
-
-// ---------------------------
-// AUTH SUBMIT ACTIONS
-// ---------------------------
-document.getElementById("loginSubmitAction").onclick = async () => {
-    if (isAuthProcessing) return;
-    const email = document.getElementById("loginEmail").value;
-    const pass = document.getElementById("loginPass").value;
-    if (!email || !pass) return showToast("Please fill all fields", "info");
-    
-    isAuthProcessing = true;
-    showLoading("Logging in...");
-    try {
-        await signInWithEmailAndPassword(auth, email, pass);
-        modal.style.display = "none";
-    } catch (e) { 
-        showToast(e.message, "error"); 
-    } finally {
-        isAuthProcessing = false;
-        hideLoading();
-    }
-};
-
-document.getElementById("signupSubmitAction").onclick = async () => {
-    if (isAuthProcessing) return;
-    const firstName = document.getElementById("fname").value;
-    const email = document.getElementById("semail").value;
-    const pass = document.getElementById("spass").value;
-    if (!firstName || !email || !pass) return showToast("Please fill all fields", "info");
-
-    isAuthProcessing = true;
-    showLoading("Creating account...");
-    try {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
-        await setDoc(doc(db, "users", userCredential.user.uid), { displayName: firstName, email, createdAt: new Date().toISOString() });
-        modal.style.display = "none";
-    } catch (e) { 
-        showToast(e.message, "error"); 
-    } finally {
-        isAuthProcessing = false;
-        hideLoading();
-    }
-};
-
-onAuthStateChanged(auth, async (user) => {
-    if (user) {
-        try {
-            const docSnap = await getDoc(doc(db, "users", user.uid));
-            if (docSnap.exists()) {
-                const userData = docSnap.data();
-                const userName = userData.displayName || "User";
-                const isProfileComplete = userData.displayName && userData.phoneNumber && userData.address;
-                document.getElementById("authSection").innerHTML = `
-                    <div class="user-dropdown">
-                        <div class="user-trigger" id="userMenuBtn" onclick="const m = document.getElementById('userMenuContent'); m.style.display = m.style.display === 'none' ? 'block' : 'none'; event.stopPropagation();">
-                            Hi, ${userName}! <i class="fa fa-chevron-down"></i>
-                        </div>
-                        <div class="dropdown-content" id="userMenuContent" style="display: none;">
-                            <div class="menu-item" onclick="showSection('orders')"><i class="fa fa-box"></i> My Orders</div>
-                            <div class="menu-item" onclick="showSection('profile')"><i class="fa fa-user"></i> Profile</div>
-                            <div class="menu-item" id="logoutBtnMain"><i class="fa fa-sign-out-alt"></i> Logout</div>
-                        </div>
-                    </div>`;
-                if (!isProfileComplete && !sessionStorage.getItem('profileSetupSkipped')) document.getElementById('profileSetupModal').style.display = 'flex';
-                if(userData.displayName) document.getElementById('profDisplayName').value = userData.displayName;
-                if(userData.phoneNumber) document.getElementById('profPhone').value = userData.phoneNumber;
-            } else {
-                await setDoc(doc(db, "users", user.uid), { email: user.email, displayName: user.displayName || "", createdAt: new Date().toISOString() });
-                document.getElementById('profileSetupModal').style.display = 'flex';
-            }
-        } catch (e) { console.log(e); }
-    } else {
-        document.getElementById("authSection").innerHTML = `<button class="login-btn" id="openModal">Login</button>`;
-    }
-});
-
-// ---------------------------
-// PROFILE SAVING
-// ---------------------------
-document.getElementById('savePersonalInfo')?.addEventListener('click', async () => {
-    const user = auth.currentUser; if (!user) return;
-    const name = document.getElementById('profDisplayName').value;
-    const phone = document.getElementById('profPhone').value;
-    showLoading("Saving Profile Settings...");
-    try {
-        await updateDoc(doc(db, "users", user.uid), { displayName: name, phoneNumber: phone });
-        showToast("Profile Updated!");
-        setTimeout(() => location.reload(), 800);
-    } catch (e) { hideLoading(); alert(e.message); }
-});
-
-document.getElementById('saveAddressInfo')?.addEventListener('click', async () => {
-    const user = auth.currentUser; if (!user) return;
-    
-    const fields = {
-        firstName: document.getElementById('profFirstName').value, 
-        lastName: document.getElementById('profLastName').value,
-        phone: document.getElementById('addrPhone').value, 
-        address: document.getElementById('addrLine1').value,
-        postalCode: document.getElementById('addrPostal').value,
-        city: document.getElementById('addrCity').value,
-        district: document.getElementById('addrDistrict').value,
-        state: document.getElementById('addrState').value
-    };
-
-    // Validation: No field should be empty
-    if (Object.values(fields).some(val => !val.trim())) {
-        alert("Please fill in all address fields (District, State, etc.) correctly.");
-        return;
-    }
-
-    showLoading("Saving Shipping Address...");
-    const addressData = {
-        ...fields,
-        apartment: document.getElementById('addrLine2').value || "", 
-        country: 'India'
-    };
-    try {
-        await updateDoc(doc(db, "users", user.uid), { address: addressData });
-        showToast("Address Saved!");
-        setTimeout(() => location.reload(), 1000);
-    } catch (e) { hideLoading(); alert(e.message); }
-});
-
-document.getElementById('updateProfileBtn')?.addEventListener('click', async () => {
-    const user = auth.currentUser; if (!user) return;
-    const name = document.getElementById('editDisplayName').value;
-    const phone = document.getElementById('editPhone').value;
-    showLoading("Updating Profile...");
-    try {
-        await updateDoc(doc(db, "users", user.uid), { displayName: name, phoneNumber: phone });
-        showToast("Updates Saved!");
-        setTimeout(() => location.reload(), 800);
-    } catch (e) { hideLoading(); }
-});
-
-const loadProfileData = async () => {
-    const user = auth.currentUser;
-    if (!user) return;
-    
-    // UI Elements
-    const pName = document.getElementById('editDisplayName');
-    const pPhone = document.getElementById('editPhone');
-    const addrBox = document.getElementById('currentAddress');
-
-    try {
-        const docSnap = await getDoc(doc(db, "users", user.uid));
-        if (docSnap.exists()) {
-            const userData = docSnap.data();
-            if(pName) pName.value = userData.displayName || "";
-            if(pPhone) pPhone.value = userData.phoneNumber || "";
-            
-            if (userData.address && addrBox) {
-                const a = userData.address;
-                addrBox.innerHTML = `
-                    <div style="padding:15px; background:#f9fbff; border:1px solid #e0eaff; border-radius:4px; text-align:left;">
-                        <div style="font-weight:600; color:#212121;">${a.firstName} ${a.lastName}</div>
-                        <p style="font-size:13px; color:#666; margin-top:5px;">${a.address}</p>
-                        <p style="font-size:13px; color:#666;">${a.city}, ${a.district}, ${a.state} - ${a.postalCode}</p>
-                        <p style="font-size:13px; color:#666;">Phone: ${a.phone}</p>
+    <!-- Profile Management Page -->
+    <main class="container" id="profilePage" style="display: none;">
+        <button class="back-btn" onclick="showSection('home')"><i class="fa fa-arrow-left"></i> Back</button>
+        <div class="profile-container">
+            <h1>My Profile Settings</h1>
+            <div class="profile-grid">
+                <div class="settings-card">
+                    <h3>Manage Profile</h3>
+                    <div class="form-group">
+                        <label>Display Name</label>
+                        <input type="text" id="editDisplayName">
                     </div>
-                `;
-            } else if(addrBox) {
-                addrBox.innerHTML = `<div class="empty-addr" style="padding:20px; background:#f5f5f5; border-radius:4px; text-align:center; color:#999;">No address saved.</div>`;
-            }
-        }
-    } catch (e) { console.error("Error loading profile:", e); }
-};
-
-const isAddressComplete = (userData) => {
-    if (!userData || !userData.address) return false;
-    const a = userData.address;
-    return (a.firstName && a.lastName && a.phone && a.address && a.postalCode && a.city && a.district && a.state);
-};
-
-document.getElementById('editAddressBtn')?.addEventListener('click', () => { 
-    document.getElementById('modalManageSection').style.display = 'none'; 
-    document.getElementById('profileSetupModal').style.display = 'flex'; 
-});
-document.getElementById('backToHome')?.addEventListener('click', () => showSection('home'));
-document.getElementById('skipProfile')?.addEventListener('click', () => { sessionStorage.setItem('profileSetupSkipped', 'true'); document.getElementById('profileSetupModal').style.display = 'none'; });
-
-window.requestCancel = async (orderId) => {
-    const ok = await showConfirm('Cancel Order?', 'Are you sure you want to request cancellation for this order?');
-    if(!ok) return;
-    showLoading("Sending Cancellation Request...");
-    try {
-        await updateDoc(doc(db, "orders", orderId), { status: 'Cancellation Requested' });
-        setTimeout(() => {
-            hideLoading();
-            showToast("Cancellation Request Sent Successfully! Status will update shortly.");
-        }, 1500);
-    } catch(e) { 
-        hideLoading();
-        console.error(e);
-        showToast('Cancellation failed: ' + e.message, "error"); 
-    }
-};
-
-const showConfirm = (title, msg) => {
-    return new Promise((resolve) => {
-        const modal = document.getElementById('confirmModal');
-        if(!modal) return resolve(confirm(msg));
-        
-        document.getElementById('confirmTitle').textContent = title;
-        document.getElementById('confirmMsg').textContent = msg;
-        modal.style.display = 'flex';
-        
-        document.getElementById('confirmOkBtn').onclick = () => { modal.style.display = 'none'; resolve(true); };
-        document.getElementById('confirmCancelBtn').onclick = () => { modal.style.display = 'none'; resolve(false); };
-    });
-};
-
-const renderMainCategories = () => { window.renderMainCategories(); };
-
-
-window.renderMainCategories = () => {
-    const nav = document.getElementById('mainCatsNav');
-    if(!nav) return;
-    
-    // Ensure 'top' exists in the display order
-    let displayCats = [...categories];
-    const hasTop = displayCats.some(c => (c.id === 'top' || c.firestoreId === 'top'));
-    if (!hasTop) {
-        // Use the proper Deals icon
-        displayCats.unshift({ 
-            id: 'top', 
-            label: 'Top Offers', 
-            icon: 'https://rukminim1.flixcart.com/flap/128/128/image/f15c02bfeb02d15d.png?q=100' // Deals
-        });
-    }
-
-    nav.innerHTML = displayCats.map(cat => {
-        const mainId = cat.id || cat.firestoreId; // ID must be prioritized to match product's category schema.
-        const hasSub = cat.subCategories && cat.subCategories.length > 0;
-        
-        let flyoutHtml = '';
-        if (hasSub) {
-            flyoutHtml = `
-                <div class="subcat-flyout" id="dropdown_${mainId}">
-                    ${cat.subCategories.map(sub => `
-                        <div class="flyout-item" onclick="event.stopPropagation(); selectSubCategory('${mainId}', '${sub.id}')">
-                            ${sub.label}
-                        </div>
-                    `).join('')}
-                </div>`;
-        }
-
-        const isActive = (activeCat === mainId);
-
-        return `
-            <div class="cat-item ${isActive ? 'active' : ''}" 
-                 onclick="handleCatClick(event, '${mainId}', ${hasSub})">
-                <img src="${cat.icon || 'https://rukminim1.flixcart.com/flap/128/128/image/22fddf3c7da4c4f4.png?q=100'}" alt="${cat.label}">
-                <span>${cat.label} ${hasSub ? '<i class="fa fa-chevron-down" style="font-size:10px; margin-left:4px;"></i>' : ''}</span>
-                ${flyoutHtml}
-            </div>`;
-    }).join('');
-
-    // Update mobile snapping
-    if (window.innerWidth <= 768) {
-        document.querySelectorAll('.cat-item').forEach(item => {
-            item.style.scrollSnapAlign = 'start';
-        });
-    }
-};
-
-window.handleCatClick = (e, catId, hasSub) => {
-    // If mobile and HAS subcategories, toggle dropdown first
-    if (window.innerWidth <= 768 && hasSub) {
-        const dropdown = document.getElementById(`dropdown_${catId}`);
-        if (dropdown) {
-            const isHidden = dropdown.style.display === 'none' || dropdown.style.display === '';
-            // Hide all others
-            document.querySelectorAll('.subcat-flyout').forEach(d => d.style.display = '');
-            
-            if (isHidden) {
-                dropdown.style.display = 'grid';
-                e.stopPropagation();
-                return; 
-            }
-        }
-    }
-    
-    // If NO sub-categories (like Top Offers), direct scroll immediately!
-    selectCategory(catId);
-};
-
-window.selectCategory = (catId) => {
-    activeCat = catId;
-    activeSubcat = ''; 
-    searchQuery = '';
-    
-    // Clear search input if navigated by category
-    const searchInputElement = document.getElementById('mainSearchInput');
-    if (searchInputElement) searchInputElement.value = '';
-
-    // If not on home page, switch to home first
-    const hPage = document.getElementById('homePage');
-    if (hPage && hPage.style.display === 'none') {
-        showSection('home');
-    }
-
-    // 400ms delay for full render + scroll
-    setTimeout(() => {
-        renderProducts(); 
-        renderMainCategories();
-        
-        // Add active class to all cat-items first
-        document.querySelectorAll('.cat-item').forEach(item => item.classList.remove('active'));
-        const activeCatItem = Array.from(document.querySelectorAll('.cat-item')).find(item => 
-            item.onclick?.toString().includes(catId) || item.dataset.cat === catId
-        );
-        if (activeCatItem) activeCatItem.classList.add('active');
-        
-        let sectionId = catId === 'top' ? 'section_top' : `section_${catId}`;
-        let sectionEl = document.getElementById(sectionId);
-        
-        // Enhanced fallback: search all sections
-        if(!sectionEl) {
-            sectionEl = document.querySelector(`.hp-cat-section[id*='${catId}']`) ||
-                       Array.from(document.querySelectorAll('.hp-cat-section')).find(s => 
-                           s.innerText.toLowerCase().includes(catId.toLowerCase())
-                       );
-        }
-
-        if(sectionEl) {
-            // Add scrollable-active class
-            sectionEl.classList.add('scrollable-active');
-            setTimeout(() => sectionEl.classList.remove('scrollable-active'), 3000);
-            
-            // Precise offset with scroll-margin-top support
-            const headerHeight = window.innerWidth <= 768 ? 260 : 220; 
-            const rect = sectionEl.getBoundingClientRect();
-            const topOffset = rect.top + window.pageYOffset - headerHeight;
-            window.scrollTo({ top: topOffset, behavior: 'smooth' });
-        } else {
-            // Grid fallback
-            const grid = document.getElementById('dynamicProductGrid');
-            if(grid) {
-                const topOffset = grid.getBoundingClientRect().top + window.pageYOffset - 220;
-                window.scrollTo({ top: topOffset, behavior: 'smooth' });
-            }
-        }
-    }, 400);
-};
-
-window.selectSubCategory = (catId, subId) => {
-    activeCat = catId;
-    activeSubcat = subId;
-    searchQuery = '';
-    
-    // Hide all dropdowns immediately after selecting subcat
-    document.querySelectorAll('.subcat-flyout').forEach(d => d.style.display = '');
-
-    // If not on home page, switch to home first
-    const hPage = document.getElementById('homePage');
-    if (hPage && hPage.style.display === 'none') {
-        showSection('home');
-    }
-
-    setTimeout(() => {
-        renderProducts();
-        renderMainCategories();
-        
-        const sectionId = `section_${catId}`;
-        let sectionEl = document.getElementById(sectionId);
-        
-        if(sectionEl) {
-            // Scroll to subcat bar if exists
-            const subcatBar = sectionEl.querySelector('.hp-subcat-bar');
-            if(subcatBar) {
-                const headerOffset = window.innerWidth <= 768 ? 280 : 260;
-                const target = subcatBar.getBoundingClientRect().top + window.pageYOffset - headerOffset;
-                window.scrollTo({ top: target, behavior: 'smooth' });
-            } else {
-                const headerOffset = window.innerWidth <= 768 ? 260 : 220;
-                const target = sectionEl.getBoundingClientRect().top + window.pageYOffset - headerOffset;
-                window.scrollTo({ top: target, behavior: 'smooth' });
-            }
-            
-            // Highlight section
-            sectionEl.classList.add('scrollable-active');
-            setTimeout(() => sectionEl.classList.remove('scrollable-active'), 3000);
-        }
-    }, 400);
-};
-
-// Helpers
-const showToast = (msg, type = "info") => {
-    const toast = document.getElementById('toast');
-    if(!toast) return;
-    toast.textContent = msg;
-    toast.className = `toast-message show ${type}`;
-    setTimeout(() => toast.className = "toast-message", 3000);
-};
-
-const showLoading = (msg = "Loading...") => {
-    const loader = document.getElementById('globalLoader');
-    if(loader) {
-        loader.style.display = 'flex';
-        const text = loader.querySelector('p');
-        if(text) text.textContent = msg;
-    }
-};
-
-const hideLoading = () => {
-    const loader = document.getElementById('globalLoader');
-    if(loader) loader.style.display = 'none';
-};
-
-window.showPolicy = (type) => {
-    const modal = document.getElementById('policyModal');
-    const title = document.getElementById('policyTitle');
-    const content = document.getElementById('policyContent');
-    if (!modal || !title || !content) return;
-
-    if (type === 'cancellation') {
-        title.innerText = "Order Cancellation Policy";
-        content.innerHTML = `
-            <p><strong>Time Window:</strong> Stallcart allows users to cancel their orders within <b>24 hours</b> from the time of order placement. This gives you time to review your purchase and make changes if necessary.</p>
-            <p><strong>Cancellation Process:</strong> To cancel, simply go to your "My Orders" section and click on the "Request Cancellation" button. Once submitted, your request will be reviewed by our admin team.</p>
-            <p><strong>Refunds for Cancelled Orders:</strong> Once a cancellation is approved, we initiate the refund process immediately. The refund will be credited to your original payment method (bank account, credit card, or wallet) within <b>24-48 hours</b> depending on your bank's processing time.</p>
-            <p><strong>Post-Shipping Cancellations:</strong> Orders cannot be cancelled once they have been shipped. In such cases, you must initiate a standard Return after receiving the product.</p>
-        `;
-    } else if (type === 'return') {
-        title.innerText = "Easy Return Policy";
-        content.innerHTML = `
-            <p><strong>Return Window:</strong> We offer a direct <b>7-day return policy</b> from the date of delivery. If you are not satisfied with your purchase, you can return it for a refund or replacement.</p>
-            <p><strong>Conditions for Return:</strong> Items must be returned in their original condition: unworn, unwashed, and with all original tags and packaging intact. Products showing signs of use or damage will not be eligible for returns.</p>
-            <p><strong>Return Process:</strong> To return a product, please email <b>stallcart.in@gmail.com</b> with your Order ID and an image of the product. Our logistics partner will pick up the item within 48 hours of approval.</p>
-            <p><strong>Non-returnable Items:</strong> For hygiene reasons, innerwear, essentials, and personalized jewelry may not be eligible for returns unless they are received in a damaged condition.</p>
-        `;
-    } else if (type === 'terms') {
-        title.innerText = "Terms & Conditions";
-        content.innerHTML = `
-            <p><strong>Ownership:</strong> The website stallcart.in is owned and operated by <b>Manish Kumar Jaiswal</b>. All trademarks, service marks, and trade names are proprietary to the owner.</p>
-            <p><strong>Agreement to Terms:</strong> By accessing and using our website, you agree to comply with and be bound by these Terms and Conditions. These terms apply to all visitors and users of the site.</p>
-            <p><strong>Order Acceptance:</strong> Stallcart reserves the right to decline or cancel any order for reasons such as product unavailability, pricing errors, or suspicion of fraudulent activity. You will be notified immediately of any such cancellation.</p>
-            <p><strong>Accuracy of Information:</strong> You are responsible for providing correct shipping and contact information. Stallcart is not liable for failed deliveries due to incorrect details provided by the user.</p>
-            <p><strong>Governing Law:</strong> All transactions and legal matters shall be governed by the laws of <b>Uttar Pradesh, India</b>.</p>
-        `;
-    } else if (type === 'privacy') {
-        title.innerText = "Privacy Policy";
-        content.innerHTML = `
-            <p><strong>Data Collection:</strong> We collect personal information such as your name, email address, phone number, and physical shipping address solely to process your orders and provide a personalized shopping experience.</p>
-            <p><strong>Data Usage:</strong> Your information is used only for fulfilling orders, providing customer support, and sending promotional updates (if you opt-in). We do not use your personal details for any other purpose.</p>
-            <p><strong>Third-Party Sharing:</strong> We value your privacy. Stallcart <b>never</b> sells or shares your personal data with third-party marketing agencies. We only share necessary details (Name/Address) with our logistics and payment partners to complete your transaction.</p>
-            <p><strong>Data Security:</strong> We use industry-standard encryption and Firebase Secure Store to protect your sensitive information from unauthorized access.</p>
-            <p><strong>Cookies:</strong> Our website uses cookies to remember your login status and shopping cart items, ensuring a smooth and fast browsing experience.</p>
-        `;
-    }
-
-    modal.style.display = 'flex';
-};
-
-function startTimer() {
-    let timeLeft = 24 * 3600;
-    const timerElement = document.getElementById("dealsTimer");
-    if (!timerElement) return;
-    
-    // Change container innerHTML to allow for separate boxes
-    setInterval(() => {
-        timeLeft--; if (timeLeft < 0) timeLeft = 24 * 3600;
-        const h = Math.floor(timeLeft / 3600).toString().padStart(2, '0');
-        const m = Math.floor((timeLeft % 3600) / 60).toString().padStart(2, '0');
-        const s = (timeLeft % 60).toString().padStart(2, '0');
-        
-        timerElement.innerHTML = `
-            <div class="timer-container">
-                <span class="time-box">${h}</span>
-                <span class="timer-sep">:</span>
-                <span class="time-box">${m}</span>
-                <span class="timer-sep">:</span>
-                <span class="time-box">${s}</span>
+                    <div class="form-group">
+                        <label>Phone Number</label>
+                        <input type="text" id="editPhone">
+                    </div>
+                    <button class="save-btn" id="updateProfileBtn">Update Profile Info</button>
+                </div>
+                <div class="settings-card">
+                    <h3>My Shipping Address</h3>
+                    <div class="address-display" id="currentAddress">
+                        No address saved.
+                    </div>
+                    <button class="save-btn" id="editAddressBtn">Edit Address Details</button>
+                </div>
             </div>
-        `;
-    }, 1000);
-}
+        </div>
+    </main>
 
-async function handleBuyNow(product) {
-    const user = auth.currentUser; if (!user) { modal.style.display = "block"; return; }
-    try {
-        const userSnap = await getDoc(doc(db, "users", user.uid));
-        const userData = userSnap.data();
-        if (!isAddressComplete(userData)) { alert('First complete your shipping address!'); document.getElementById('profileSetupModal').style.display = 'flex'; return; }
-        const sizeInput = document.getElementById('selectedProductSize');
-        if (sizeInput && !sizeInput.value) { alert("Please select a size first!"); return; }
-        const selSize = sizeInput ? sizeInput.value : 'N/A';
-        const deliveryOtp = Math.floor(100000 + Math.random() * 900000);
-        const orderData = { userId: user.uid, userName: userData.displayName, userEmail: user.email, address: userData.address, productId: product.id, productTitle: product.title || product.name, productPrice: product.price, productImage: product.imageUrl || product.img, selectedSize: selSize, orderDate: new Date().toISOString(), status: 'Ordered', deliveryOtp: deliveryOtp, deliveryEstimate: getDeliveryDate(12) };
-        await addDoc(collection(db, "orders"), orderData);
-        alert('Congratulations! Your order has been placed.');
-        showSection('home');
-    } catch (e) { alert(e.message); }
-}
+    <div id="authModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-left">
+                <h2 id="modalTitle">Login</h2>
+                <p>Get access to your Orders and Wishlist</p>
+                <img src="logo.png" alt="Stalllcart" class="auth-img-sidebar">
+            </div>
+            <div class="modal-right">
+                <span class="close" id="closeModal">&times;</span>
+                <div id="loginView">
+                    <input type="email" id="loginEmail" placeholder="Enter Email">
+                    <input type="password" id="loginPass" placeholder="Enter Password">
+                    <button class="action-btn orange-btn" id="loginSubmitAction">Login</button>
+                    <div class="separator">OR</div>
+                    <button class="action-btn google-btn" id="googleBtn">Google Sign-In</button>
+                    <p class="switch-text" id="toSignup">New to Stallcart? Create an account</p>
+                </div>
+                <div id="signupView" style="display: none;">
+                    <input type="text" id="fname" placeholder="First Name">
+                    <input type="email" id="semail" placeholder="Email">
+                    <input type="password" id="spass" placeholder="Set Password">
+                    <button class="action-btn orange-btn" id="signupSubmitAction">Create Account</button>
+                    <div class="separator">OR</div>
+                    <button class="action-btn google-btn" id="googleBtnSignup">Google Sign-In</button>
+                    <p class="switch-text" id="toLogin">Existing User? Log in</p>
+                </div>
+            </div>
+        </div>
+    </div>
 
-// ---------------------------
-// Store Banner config from Firestore
-// ---------------------------
-const loadBannerConfig = async () => {
-    try {
-        const docSnap = await getDoc(doc(db, "storeConfig", "homeBanner"));
-        const bannerBox = document.getElementById('promoBanner');
-        
-        if (docSnap.exists()) {
-            const data = docSnap.data();
+    <!-- Global Custom Confirm Modal -->
+    <div id="confirmModal" class="confirm-modal-overlay" style="display: none;">
+        <div class="confirm-box">
+            <h3 id="confirmTitle">Confirm Action</h3>
+            <p id="confirmMsg">Are you sure you want to proceed?</p>
+            <div class="confirm-buttons">
+                <button id="confirmCancelBtn" class="confirm-btn cancel">Cancel</button>
+                <button id="confirmOkBtn" class="confirm-btn ok">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Global Admin Toast -->
+    <div id="toast" class="toast-message"></div>
+
+    <!-- Global Loader Overlay -->
+    <div id="globalLoader" class="loading-overlay" style="display: none;">
+        <div class="spinner"></div>
+        <p>Processing...</p>
+    </div>
+
+    <script type="module" src="script.js"></script>
+    <!-- Professional Footer -->
+    <footer class="main-footer">
+        <div class="footer-container">
+            <div class="footer-column">
+                <h4>ABOUT US</h4>
+                <p style="font-size: 11px; line-height: 1.6; color: #dbdbdb; max-width: 250px;">
+                    Stallcart is India's premium fashion destination, offering curated trends for men and women. 
+                    <br><br>
+                    <b>Owner:</b> Manish Kumar Jaiswal
+                </p>
+                <div style="margin-top:20px;">
+                    <a href="delivery.html" style="color: #ffd700; font-size: 12px; font-weight: 700; text-decoration: none; display: flex; align-items: center; gap: 8px;">
+                        <i class="fa fa-motorcycle"></i> Work as A Delivery Boy
+                    </a>
+                </div>
+                <div class="footer-logo-group" style="display: flex; align-items: center; gap: 8px; margin-top: 20px;">
+                    <img src="Lo.png" alt="Stallcart" style="height: 45px; width: auto; object-fit: contain;">
+                    <div class="logo" style="font-size: 24px; color: #fff; background: none; -webkit-text-fill-color: #fff;">Stallcart</div>
+                </div>
+            </div>
             
-            // Text Elements
-            if (data.topBadge && document.getElementById('bannerTopBadge')) document.getElementById('bannerTopBadge').innerText = data.topBadge;
-            if (data.badge && document.getElementById('bannerBadge')) document.getElementById('bannerBadge').innerText = data.badge;
-            if (data.title && document.getElementById('bannerTitle')) document.getElementById('bannerTitle').innerHTML = data.title;
-            if (data.desc && document.getElementById('bannerDesc')) document.getElementById('bannerDesc').innerText = data.desc;
-            if (data.btnText && document.getElementById('bannerActionBtn')) document.getElementById('bannerActionBtn').innerText = data.btnText;
-            if (data.limitedTag && document.getElementById('bannerLimitedTag')) document.getElementById('bannerLimitedTag').innerText = data.limitedTag;
-            
-            // Button Link
-            if (data.btnLink && document.getElementById('bannerActionBtn')) {
-                document.getElementById('bannerActionBtn').onclick = () => {
-                   if (data.btnLink.startsWith('http')) window.open(data.btnLink, '_blank');
-                   else showSection(data.btnLink);
-                };
-            }
-            
-            // Background Image
-            if (data.bgUrl && bannerBox) {
-                bannerBox.style.backgroundImage = `linear-gradient(90deg, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.5) 100%), url('${data.bgUrl}')`;
-            }
-        }
-    } catch (e) { console.error("Error loading banner config:", e); }
-};
+            <div class="footer-column">
+                <h4>POLICIES</h4>
+                <a href="#" onclick="showPolicy('cancellation')">Cancellation Policy (24-Hour)</a>
+                <a href="#" onclick="showPolicy('return')">Return Policy</a>
+                <a href="#" onclick="showPolicy('terms')">Terms & Conditions</a>
+                <a href="#" onclick="showPolicy('privacy')">Privacy Policy</a>
+            </div>
 
-async function loadStoreDeals() {
-    loadBannerConfig();
-    try {
-        const snap = await getDoc(doc(db, "config", "deals"));
-        if (snap.exists()) {
-            const data = snap.data();
-            const bar = document.getElementById('announcementBar');
-            
-            if (bar && data.topBar) {
-                bar.innerText = data.topBar;
-                bar.style.display = 'block';
-            }
-        }
-    } catch (e) { console.log('Deals sync error:', e); }
-}
+            <div class="footer-column">
+                <h4>CONTACT US</h4>
+                <a href="tel:8004096954"><i class="fa fa-phone"></i> +91 8004096954</a>
+                <a href="https://wa.me/8004096954"><i class="fab fa-whatsapp"></i> +91 8004096954</a>
+                <a href="mailto:stallcart.in@gmail.com"><i class="fa fa-envelope"></i> stallcart.in@gmail.com</a>
+                <p style="color: #878787; font-size: 10px; margin-top: 10px;">Address: Uttar Pradesh, India</p>
+            </div>
 
-const smoothScrollToDeals = () => {
-    const section = document.getElementById('dynamicSection');
-    if (section) section.scrollIntoView({ behavior: 'smooth' });
-};
-
-window.showSection = (id) => {
-    // Hide all main containers
-    document.querySelectorAll('main.container, main[id$="Page"]').forEach(s => s.style.display = 'none');
-    
-    // Header Visibility Logic for Home/Others
-    const searchBar = document.querySelector('.search-container');
-    const categoriesNav = document.getElementById('mainCatsNav');
-    
-    if(id === 'home') {
-        if(searchBar) searchBar.style.visibility = 'visible';
-        if(categoriesNav) categoriesNav.style.display = 'flex';
-        renderProducts();
-    } else {
-        if(searchBar) searchBar.style.visibility = 'hidden';
-        if(categoriesNav) categoriesNav.style.display = 'none';
-    }
-
-    const target = document.getElementById(id + 'Page') || document.getElementById(id + 'Section');
-    if(target) {
-        target.style.display = 'block';
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else {
-        console.error("Section not found:", id);
-    }
-    
-    // Refresh Data for specific pages
-    if(id === 'orders') renderOrders();
-    if(id === 'cart') renderCart();
-    if(id === 'profile') loadProfileData();
-};
-
-window.deleteOrder = async (orderId) => {
-    if(!confirm("Are you sure you want to remove this order from your history?")) return;
-    try {
-        await deleteDoc(doc(db, "orders", orderId));
-        showToast("Order removed successfully.");
-    } catch (e) {
-        showToast("Deletion failed: " + e.message, "error");
-    }
-};
-
-document.addEventListener('click', (e) => {
-    const menu = document.getElementById('userMenuContent');
-    if (menu && !e.target.closest('.user-dropdown')) menu.style.display = 'none';
-});
-
-
-
-fetchData();
-loadStoreDeals();
-startTimer();
-
-window.toggleReadMore = (btn) => {
-    const wrapper = btn.closest('.read-more-wrapper');
-    const content = wrapper.querySelector('.desc-content');
-    content.classList.toggle('open');
-    if (content.classList.contains('open')) {
-        btn.innerHTML = 'READ LESS <i class="fa fa-chevron-up"></i>';
-    } else {
-        btn.innerHTML = 'READ MORE <i class="fa fa-chevron-down"></i>';
-    }
-};
-
-// Sort Bar Listeners
-document.querySelectorAll('.sort-btn').forEach(btn => {
-    btn.onclick = () => {
-        document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        currentSort = btn.dataset.sort;
-        renderProducts();
-    };
-});
+            <div class="footer-column">
+                <h4>TRUST & SECURITY</h4>
+                <div class="trust-icons" style="display:flex; flex-direction:column; gap:12px;">
+                    <span style="font-size:11px; display:flex; align-items:center; gap:8px;"><i class="fa fa-shield-halved" style="color:#2874f0;"></i> Secure Payments by Razorpay</span>
+                    <span style="font-size:11px; display:flex; align-items:center; gap:8px;"><i class="fa fa-check-circle" style="color:#388e3c;"></i> 100% Original Products</span>
+                    <span style="font-size:11px; display:flex; align-items:center; gap:8px;"><i class="fa fa-truck-fast" style="color:#ff9800;"></i> Free & Fast Delivery India</span>
+                </div>
+                <div class="payment-methods" style="margin-top:15px;">
+                    <i class="fab fa-cc-visa" title="Visa"></i>
+                    <i class="fab fa-cc-mastercard" title="Mastercard"></i>
+                    <i class="fab fa-google-pay" title="Google Pay"></i>
+                    <i class="fa-solid fa-credit-card" title="UPI"></i>
+                </div>
+            </div>
+        </div>
+        <div class="footer-bottom" style="border-top:1px solid rgba(255,255,255,0.05); padding-top:20px; margin-top:40px; text-align:center;">
+             <p style="font-size:11px; opacity:0.6;">&copy; 2026 Stallcart.in | India's Premium Destination. Manufactured with Love in India.</p>
+        </div>
+    </footer>
+    <script type="module" src="script.js?v=2.0.1"></script>
+</body>
+</html>
