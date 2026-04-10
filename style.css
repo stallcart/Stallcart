@@ -14,7 +14,7 @@ body { background-color: #f1f3f6; }
     border-bottom: 1px solid rgba(0,0,0,0.05);
 }
 .nav-content { display: flex; align-items: center; justify-content: space-between; gap: 30px; max-width: 1300px; margin: auto; padding: 0 40px; width: 100%; }
-.logo { font-family: 'Inter', sans-serif; font-weight: 800; font-size: 28px; background: linear-gradient(45deg, #2874f0, #00d2ff); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; cursor: pointer; text-decoration: none; flex-shrink: 0; letter-spacing: -1.5px; text-transform: uppercase; }
+.logo { font-family: 'Inter', sans-serif; font-weight: 800; font-size: 28px; background: linear-gradient(45deg, #2874f0, #00d2ff); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; cursor: pointer; text-decoration: none; flex-shrink: 0; letter-spacing: -1.5px; }
 .search-container { flex-grow: 1; position: relative; max-width: 700px; margin: 0 20px; }
 .search-box { position: relative; width: 100%; display: flex; align-items: center; }
 .search-icon { position: absolute; left: 15px; color: #2874f0; z-index: 5; font-size: 16px; }
@@ -1407,7 +1407,7 @@ input { width: 100%; margin-bottom: 15px; padding: 12px 5px; border: none; borde
 .checkout-price { font-weight: 600; font-size: 16px; }
 
 .badge-row { display: flex; gap: 8px; margin-top: 5px; flex-wrap: wrap; }
-.badge { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 2px; text-transform: uppercase; display: inline-flex; align-items: center; gap: 4px; }
+.badge { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 2px; display: inline-flex; align-items: center; gap: 4px; }
 /* --- Delivery & Security --- */
 .delivery-security-box {
     margin-top: 15px;
@@ -2141,3 +2141,4 @@ input { width: 100%; margin-bottom: 15px; padding: 12px 5px; border: none; borde
     .shopy-img-container { aspect-ratio: 1/1.2; }
 }
 
+:
