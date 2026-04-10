@@ -31,6 +31,7 @@ let activeCat = 'top';
 let activeSubcat = '';
 let searchQuery = '';
 let currentSort = 'relevance';
+let isAuthProcessing = false;
 const updateCartCount = () => {
     const countNodes = document.querySelectorAll('.cart-count');
     countNodes.forEach(n => n.textContent = cart.length);
@@ -808,8 +809,24 @@ document.addEventListener('click', (e) => {
         document.getElementById("loginView").style.display = "block";
         document.getElementById("modalTitle").textContent = "Login";
     }
-    if (e.target.id === 'googleBtn' || e.target.closest('#googleBtn') || e.target.id === 'googleBtnSignup' || e.target.closest('#googleBtnSignup')) {
-        signInWithPopup(auth, provider).then(() => modal.style.display = "none").catch(err => alert(err.message));
+    const gBtn = e.target.closest('#googleBtn') || e.target.closest('#googleBtnSignup');
+    if (gBtn) {
+        if (isAuthProcessing) return;
+        isAuthProcessing = true;
+        showLoading("Signing in with Google...");
+        signInWithPopup(auth, provider)
+            .then(() => {
+                modal.style.display = "none";
+            })
+            .catch(err => {
+                if (err.code !== 'auth/cancelled-popup-request' && err.code !== 'auth/popup-closed-by-user') {
+                    showToast(err.message, "error");
+                }
+            })
+            .finally(() => {
+                isAuthProcessing = false;
+                hideLoading();
+            });
     }
     if (e.target.id === 'logout' || e.target.closest('#logoutBtnMain')) signOut(auth).then(() => location.reload());
     if (e.target.classList.contains('logo') || e.target.classList.contains('back-btn')) showSection('home');
@@ -826,23 +843,43 @@ document.addEventListener('click', (e) => {
 // AUTH SUBMIT ACTIONS
 // ---------------------------
 document.getElementById("loginSubmitAction").onclick = async () => {
+    if (isAuthProcessing) return;
     const email = document.getElementById("loginEmail").value;
     const pass = document.getElementById("loginPass").value;
+    if (!email || !pass) return showToast("Please fill all fields", "info");
+    
+    isAuthProcessing = true;
+    showLoading("Logging in...");
     try {
         await signInWithEmailAndPassword(auth, email, pass);
         modal.style.display = "none";
-    } catch (e) { alert('Login error: ' + e.message); }
+    } catch (e) { 
+        showToast(e.message, "error"); 
+    } finally {
+        isAuthProcessing = false;
+        hideLoading();
+    }
 };
 
 document.getElementById("signupSubmitAction").onclick = async () => {
+    if (isAuthProcessing) return;
     const firstName = document.getElementById("fname").value;
     const email = document.getElementById("semail").value;
     const pass = document.getElementById("spass").value;
+    if (!firstName || !email || !pass) return showToast("Please fill all fields", "info");
+
+    isAuthProcessing = true;
+    showLoading("Creating account...");
     try {
         const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
         await setDoc(doc(db, "users", userCredential.user.uid), { displayName: firstName, email, createdAt: new Date().toISOString() });
         modal.style.display = "none";
-    } catch (e) { alert('Signup error: ' + e.message); }
+    } catch (e) { 
+        showToast(e.message, "error"); 
+    } finally {
+        isAuthProcessing = false;
+        hideLoading();
+    }
 };
 
 onAuthStateChanged(auth, async (user) => {
