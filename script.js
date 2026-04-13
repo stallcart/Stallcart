@@ -246,7 +246,7 @@ const renderOrders = async () => {
                     <div class="order-actions-bottom">
                          ${canCancel ? `<button class="order-action-btn cancel-trigger" onclick="requestCancel('${o.id}')">Request Cancellation</button>` : ''}
                          <button class="order-action-btn" onclick="viewProduct('${o.productId}')">View Product</button>
-                         <button class="order-action-btn help-btn" onclick="alert('Support: stallcart.in@gmail.com')">Need Help?</button>
+                         <button class="order-action-btn help-btn" onclick="showToast('Support: StallCart.in@gmail.com', 'info')">Need Help?</button>
                     </div>
                 </div>`;
             }).join('');
@@ -352,7 +352,7 @@ const startCheckout = async () => {
                         </div>
                         <div class="checkout-info">
                             <h4>${p.title || p.name}</h4>
-                            <p class="seller-info">Stallcart Elite Seller</p>
+                            <p class="seller-info">StallCart Elite Seller</p>
                             <div class="checkout-price-row">
                                 <span class="current-price">₹${price}</span>
                                 <span class="old-price">₹${oldPrice.toFixed(0)}</span>
@@ -360,7 +360,7 @@ const startCheckout = async () => {
                             </div>
                             <div class="badge-row">
                                 <span class="badge delivery-badge"><i class="fa fa-truck"></i> Free Delivery by ${getDeliveryDate(12)}</span>
-                                ${p.isAssured ? '<span class="badge assured-badge">STALLCART ASSURED</span>' : ''}
+                                ${p.isAssured ? '<span class="badge assured-badge">StallCart Assured</span>' : ''}
                             </div>
                         </div>
                     </div>
@@ -436,7 +436,7 @@ document.getElementById('finishOrderBtn')?.addEventListener('click', async () =>
                 "key": "rzp_live_SYuATabBV5Nnb8",
                 "amount": totalAmount * 100,
                 "currency": "INR",
-                "name": "Stallcart",
+                "name": "StallCart",
                 "description": "Premium Shopping Experience",
                 "image": "logo.png",
                 "handler": async function (response) {
@@ -711,7 +711,7 @@ window.viewProduct = (id) => {
                 <h4>Product Highlights</h4>
                 <div class="highlight-grid">
                     <div class="highlight-point"><i class="fa fa-circle-check"></i> Premium Grade Material</div>
-                    <div class="highlight-point"><i class="fa fa-circle-check"></i> Stallcart Elite Design</div>
+                    <div class="highlight-point"><i class="fa fa-circle-check"></i> StallCart Elite Design</div>
                     <div class="highlight-point"><i class="fa fa-circle-check"></i> Comfort & Durability</div>
                     <div class="highlight-point"><i class="fa fa-circle-check"></i> Breathable Fabric</div>
                 </div>
@@ -736,7 +736,7 @@ window.viewProduct = (id) => {
                     </div>
                     <div class="spec-tile">
                         <span class="label">Brand</span>
-                        <span class="value">${p.brand || "Stallcart Elite"}</span>
+                        <span class="value">${p.brand || "StallCart Elite"}</span>
                     </div>
                     <div class="spec-tile">
                         <span class="label">Material</span>
@@ -746,7 +746,7 @@ window.viewProduct = (id) => {
                 
                 <div class="description-block">
                     <div class="read-more-wrapper">
-                        <p class="description-text desc-content">${p.desc || "Experience the pinnacle of luxury with this premium product, exclusively curated by Stallcart for those who value style and exceptional quality."}</p>
+                        <p class="description-text desc-content">${p.desc || "Experience the pinnacle of luxury with this premium product, exclusively curated by StallCart for those who value style and exceptional quality."}</p>
                         <button class="read-more-btn" onclick="toggleReadMore(this)">READ MORE <i class="fa fa-chevron-down"></i></button>
                     </div>
                 </div>
@@ -926,7 +926,7 @@ document.getElementById('savePersonalInfo')?.addEventListener('click', async () 
         await updateDoc(doc(db, "users", user.uid), { displayName: name, phoneNumber: phone });
         showToast("Profile Updated!");
         setTimeout(() => location.reload(), 800);
-    } catch (e) { hideLoading(); alert(e.message); }
+    } catch (e) { hideLoading(); showToast(e.message, 'error'); }
 });
 
 document.getElementById('saveAddressInfo')?.addEventListener('click', async () => {
@@ -945,7 +945,7 @@ document.getElementById('saveAddressInfo')?.addEventListener('click', async () =
 
     // Validation: No field should be empty
     if (Object.values(fields).some(val => !val.trim())) {
-        alert("Please fill in all address fields (District, State, etc.) correctly.");
+        showToast("Address ki sabhi jankari bharna jaruri hai.", "info");
         return;
     }
 
@@ -959,7 +959,7 @@ document.getElementById('saveAddressInfo')?.addEventListener('click', async () =
         await updateDoc(doc(db, "users", user.uid), { address: addressData });
         showToast("Address Saved!");
         setTimeout(() => location.reload(), 1000);
-    } catch (e) { hideLoading(); alert(e.message); }
+    } catch (e) { hideLoading(); showToast(e.message, 'error'); }
 });
 
 document.getElementById('updateProfileBtn')?.addEventListener('click', async () => {
@@ -1230,7 +1230,34 @@ window.selectSubCategory = (catId, subId) => {
 const showToast = (msg, type = "info") => {
     const toast = document.getElementById('toast');
     if(!toast) return;
-    toast.textContent = msg;
+
+    // Easy Language Mapping (English)
+    let easyMsg = msg;
+    const errorMaps = {
+        'auth/invalid-email': "Invalid email address format.",
+        'auth/user-not-found': "User not found. Please sign up.",
+        'auth/wrong-password': "Incorrect password. Try again.",
+        'auth/email-already-in-use': "This email is already registered.",
+        'auth/weak-password': "Password should be at least 6 characters.",
+        'auth/network-request-failed': "Network error. Check your connection.",
+        'auth/too-many-requests': "Too many attempts. Please wait.",
+        'Please fill all fields': "All fields are required.",
+        'Please select a size first!': "Please select a size first!",
+        'Profile Updated!': "Profile Updated Successfully!",
+        'Address Saved!': "Shipping Address Saved!",
+        'Added to Cart!': "Item added to your cart!",
+        'Congratulations! Your order has been placed successfully.': "Congratulations! Your order has been placed successfully. 🎉"
+    };
+
+    // Check if message matches any key (either code or exact match)
+    for (let key in errorMaps) {
+        if (msg.includes(key)) {
+            easyMsg = errorMaps[key];
+            break;
+        }
+    }
+
+    toast.textContent = easyMsg;
     toast.className = `toast-message show ${type}`;
     setTimeout(() => toast.className = "toast-message", 3000);
 };
@@ -1258,7 +1285,7 @@ window.showPolicy = (type) => {
     if (type === 'cancellation') {
         title.innerText = "Order Cancellation Policy";
         content.innerHTML = `
-            <p><strong>Time Window:</strong> Stallcart allows users to cancel their orders within <b>24 hours</b> from the time of order placement. This gives you time to review your purchase and make changes if necessary.</p>
+            <p><strong>Time Window:</strong> StallCart allows users to cancel their orders within <b>24 hours</b> from the time of order placement. This gives you time to review your purchase and make changes if necessary.</p>
             <p><strong>Cancellation Process:</strong> To cancel, simply go to your "My Orders" section and click on the "Request Cancellation" button. Once submitted, your request will be reviewed by our admin team.</p>
             <p><strong>Refunds for Cancelled Orders:</strong> Once a cancellation is approved, we initiate the refund process immediately. The refund will be credited to your original payment method (bank account, credit card, or wallet) within <b>24-48 hours</b> depending on your bank's processing time.</p>
             <p><strong>Post-Shipping Cancellations:</strong> Orders cannot be cancelled once they have been shipped. In such cases, you must initiate a standard Return after receiving the product.</p>
@@ -1268,16 +1295,16 @@ window.showPolicy = (type) => {
         content.innerHTML = `
             <p><strong>Return Window:</strong> We offer a direct <b>7-day return policy</b> from the date of delivery. If you are not satisfied with your purchase, you can return it for a refund or replacement.</p>
             <p><strong>Conditions for Return:</strong> Items must be returned in their original condition: unworn, unwashed, and with all original tags and packaging intact. Products showing signs of use or damage will not be eligible for returns.</p>
-            <p><strong>Return Process:</strong> To return a product, please email <b>stallcart.in@gmail.com</b> with your Order ID and an image of the product. Our logistics partner will pick up the item within 48 hours of approval.</p>
+            <p><strong>Return Process:</strong> To return a product, please email <b>StallCart.in@gmail.com</b> with your Order ID and an image of the product. Our logistics partner will pick up the item within 48 hours of approval.</p>
             <p><strong>Non-returnable Items:</strong> For hygiene reasons, innerwear, essentials, and personalized jewelry may not be eligible for returns unless they are received in a damaged condition.</p>
         `;
     } else if (type === 'terms') {
         title.innerText = "Terms & Conditions";
         content.innerHTML = `
-            <p><strong>Ownership:</strong> The website stallcart.in is owned and operated by <b>Manish Kumar Jaiswal</b>. All trademarks, service marks, and trade names are proprietary to the owner.</p>
+            <p><strong>Ownership:</strong> The website StallCart.in is owned and operated by <b>Manish Kumar Jaiswal</b>. All trademarks, service marks, and trade names are proprietary to the owner.</p>
             <p><strong>Agreement to Terms:</strong> By accessing and using our website, you agree to comply with and be bound by these Terms and Conditions. These terms apply to all visitors and users of the site.</p>
-            <p><strong>Order Acceptance:</strong> Stallcart reserves the right to decline or cancel any order for reasons such as product unavailability, pricing errors, or suspicion of fraudulent activity. You will be notified immediately of any such cancellation.</p>
-            <p><strong>Accuracy of Information:</strong> You are responsible for providing correct shipping and contact information. Stallcart is not liable for failed deliveries due to incorrect details provided by the user.</p>
+            <p><strong>Order Acceptance:</strong> StallCart reserves the right to decline or cancel any order for reasons such as product unavailability, pricing errors, or suspicion of fraudulent activity. You will be notified immediately of any such cancellation.</p>
+            <p><strong>Accuracy of Information:</strong> You are responsible for providing correct shipping and contact information. StallCart is not liable for failed deliveries due to incorrect details provided by the user.</p>
             <p><strong>Governing Law:</strong> All transactions and legal matters shall be governed by the laws of <b>Uttar Pradesh, India</b>.</p>
         `;
     } else if (type === 'privacy') {
@@ -1285,7 +1312,7 @@ window.showPolicy = (type) => {
         content.innerHTML = `
             <p><strong>Data Collection:</strong> We collect personal information such as your name, email address, phone number, and physical shipping address solely to process your orders and provide a personalized shopping experience.</p>
             <p><strong>Data Usage:</strong> Your information is used only for fulfilling orders, providing customer support, and sending promotional updates (if you opt-in). We do not use your personal details for any other purpose.</p>
-            <p><strong>Third-Party Sharing:</strong> We value your privacy. Stallcart <b>never</b> sells or shares your personal data with third-party marketing agencies. We only share necessary details (Name/Address) with our logistics and payment partners to complete your transaction.</p>
+            <p><strong>Third-Party Sharing:</strong> We value your privacy. StallCart <b>never</b> sells or shares your personal data with third-party marketing agencies. We only share necessary details (Name/Address) with our logistics and payment partners to complete your transaction.</p>
             <p><strong>Data Security:</strong> We use industry-standard encryption and Firebase Secure Store to protect your sensitive information from unauthorized access.</p>
             <p><strong>Cookies:</strong> Our website uses cookies to remember your login status and shopping cart items, ensuring a smooth and fast browsing experience.</p>
         `;
@@ -1323,16 +1350,16 @@ async function handleBuyNow(product) {
     try {
         const userSnap = await getDoc(doc(db, "users", user.uid));
         const userData = userSnap.data();
-        if (!isAddressComplete(userData)) { alert('First complete your shipping address!'); document.getElementById('profileSetupModal').style.display = 'flex'; return; }
+        if (!isAddressComplete(userData)) { showToast('Pehle apna shipping address pura bharein!', 'info'); document.getElementById('profileSetupModal').style.display = 'flex'; return; }
         const sizeInput = document.getElementById('selectedProductSize');
-        if (sizeInput && !sizeInput.value) { alert("Please select a size first!"); return; }
+        if (sizeInput && !sizeInput.value) { showToast("Pehle size choose karein!", 'info'); return; }
         const selSize = sizeInput ? sizeInput.value : 'N/A';
         const deliveryOtp = Math.floor(100000 + Math.random() * 900000);
         const orderData = { userId: user.uid, userName: userData.displayName, userEmail: user.email, address: userData.address, productId: product.id, productTitle: product.title || product.name, productPrice: product.price, productImage: product.imageUrl || product.img, selectedSize: selSize, orderDate: new Date().toISOString(), status: 'Ordered', deliveryOtp: deliveryOtp, deliveryEstimate: getDeliveryDate(12) };
         await addDoc(collection(db, "orders"), orderData);
-        alert('Congratulations! Your order has been placed.');
+        showToast('Badhai ho! Aapka order book ho gaya hai.', 'success');
         showSection('home');
-    } catch (e) { alert(e.message); }
+    } catch (e) { showToast(e.message, 'error'); }
 }
 
 // ---------------------------
