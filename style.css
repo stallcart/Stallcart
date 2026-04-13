@@ -162,7 +162,7 @@ body { background-color: #f1f3f6; overflow-x: hidden; width: 100%; position: rel
 .modal {
     display: none;
     position: fixed;
-    z-index: 5000;
+    z-index: 2147483645 !important;
     left: 0;
     top: 0;
     width: 100%;
@@ -736,7 +736,7 @@ body { background-color: #f1f3f6; overflow-x: hidden; width: 100%; position: rel
     color: #fff;
     padding: 14px 28px;
     border-radius: 50px;
-    z-index: 20000;
+    z-index: 2147483647 !important;
     font-size: 14px;
     font-weight: 500;
     box-shadow: 0 10px 30px rgba(0,0,0,0.2);
@@ -767,7 +767,7 @@ body { background-color: #f1f3f6; overflow-x: hidden; width: 100%; position: rel
     display: flex;
     justify-content: center;
     align-items: center;
-    z-index: 30000;
+    z-index: 2147483646 !important;
 }
 
 .confirm-box {
@@ -1062,7 +1062,7 @@ body { background-color: #f1f3f6; overflow-x: hidden; width: 100%; position: rel
 .modal { 
     display: none; 
     position: fixed; 
-    z-index: 999999 !important; 
+    z-index: 2147483645 !important; 
     left: 0; 
     top: 0; 
     width: 100%; 
@@ -1194,7 +1194,7 @@ input { width: 100%; margin-bottom: 15px; padding: 12px 5px; border: none; borde
 .modal {
     display: none;
     position: fixed;
-    z-index: 5000;
+    z-index: 2147483645 !important;
     left: 0;
     top: 0;
     width: 100%;
@@ -2141,4 +2141,43 @@ input { width: 100%; margin-bottom: 15px; padding: 12px 5px; border: none; borde
     .shopy-img-container { aspect-ratio: 1/1.2; }
 }
 
-:
+/* ============================================================ 
+   ABSOLUTE HIGHEST LAYER OVERRIDES (Z-INDEX FIX)
+   Ensuring Toasts/Popups are ALWAYS on top of everything
+   ============================================================ */
+
+.toast-message { 
+    visibility: hidden; 
+    background: #323232; 
+    color: #fff; 
+    padding: 14px 30px; 
+    position: fixed; 
+    top: 30px; 
+    left: 50%; 
+    transform: translateX(-50%) translateY(-20px); 
+    border-radius: 50px; 
+    font-weight: 600; 
+    z-index: 2147483647 !important; 
+    box-shadow: 0 15px 45px rgba(0,0,0,0.3);
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    opacity: 0;
+    font-size: 14px;
+    letter-spacing: 0.3px;
+    border: 1px solid rgba(255,255,255,0.1);
+    backdrop-filter: blur(10px);
+}
+
+.toast-message.show { 
+    visibility: visible; 
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.toast-message.info { background: linear-gradient(135deg, #2874f0, #00d2ff) !important; }
+.toast-message.error { background: linear-gradient(135deg, #d32f2f, #ff5252) !important; }
+.toast-message.success { background: linear-gradient(135deg, #388e3c, #66bb6a) !important; }
+
+/* Modal and Overlays at highest level but below Toast */
+.modal, .confirm-modal-overlay, .loading-overlay {
+    z-index: 2147483640 !important;
+}
