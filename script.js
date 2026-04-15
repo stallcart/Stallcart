@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, query, addDoc, updateDoc, where, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, getDocs, collection, onSnapshot, query, addDoc, updateDoc, where, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyB1bnXrYuwJQ-prQN1hsPYwr_oR2WwghjU",
@@ -104,6 +104,9 @@ window.applySearch = (val) => {
 
 
 let checkoutItems = [];
+let appliedCouponDiscount = 0;
+let appliedCouponCode = null;
+let totalDeliveryCharge = 0;
 
 const getDeliveryDate = (days = 12) => {
     const d = new Date(); d.setDate(d.getDate() + days);
@@ -168,21 +171,41 @@ const renderCart = () => {
         return;
     }
     let total = 0;
+    totalDeliveryCharge = 0;
     list.innerHTML = cart.map((p, index) => {
         total += parseFloat(p.price);
+        const pDel = parseFloat(p.deliveryCharge) || 0;
+        totalDeliveryCharge += pDel;
         return `<div class="cart-item-row">
             <img src="${p.imageUrl || p.img}" alt="${p.title}">
             <div style="flex:1;">
                 <h4>${p.title || p.name}</h4>
                 <div style="font-weight:600; margin-top:5px;">₹${p.price}</div>
-                <p style="font-size:12px; margin-top:10px;">Delivery by ${getDeliveryDate()} | <span class="green-text">Free</span></p>
+                <p style="font-size:12px; margin-top:10px;">Delivery by ${getDeliveryDate()} | <span class="green-text">${pDel > 0 ? '₹'+pDel : 'Free'}</span></p>
             </div>
             <button onclick="removeFromCart(${index})" style="background:none; border:none; color:#2874f0; cursor:pointer; font-size:12px; font-weight:600;">REMOVE</button>
         </div>`;
     }).join('');
+    
+    document.getElementById('itemQty').textContent = cart.length;
     document.getElementById('cartTotalCount').textContent = cart.length;
     document.getElementById('totalMRP').textContent = `₹${total}`;
-    document.getElementById('finalCartAmount').textContent = `₹${total}`;
+    
+    const cartDelEl = document.getElementById('cartDeliveryCharge');
+    if (cartDelEl) {
+        cartDelEl.textContent = totalDeliveryCharge > 0 ? `₹${totalDeliveryCharge}` : 'FREE';
+        cartDelEl.className = totalDeliveryCharge > 0 ? 'red-text' : 'green-text';
+    }
+
+    const updateCartTotals = () => {
+        const discEl = document.getElementById('totalDiscount');
+        if (discEl) discEl.textContent = `-₹${appliedCouponDiscount.toFixed(0)}`;
+        const finalAmt = Math.max(0, total + totalDeliveryCharge - appliedCouponDiscount);
+        const finalAmtEl = document.getElementById('finalCartAmount');
+        if (finalAmtEl) finalAmtEl.textContent = `₹${finalAmt.toFixed(0)}`;
+    };
+    updateCartTotals();
+
 };
 
 const renderOrders = async () => {
@@ -371,8 +394,54 @@ const startCheckout = async () => {
 
         // Update Payment Step Final Amount
         const total = checkoutItems.reduce((acc, p) => acc + (p ? parseFloat(p.price) : 0), 0);
-        const payFinalAmtElV5 = document.getElementById('payFinalAmountV5');
-        if(payFinalAmtElV5) payFinalAmtElV5.textContent = `₹${total}`;
+        
+        const updatePayTotal = () => {
+            const payFinalAmtElV5 = document.getElementById('payFinalAmountV5');
+            if(payFinalAmtElV5) payFinalAmtElV5.textContent = `₹${Math.max(0, total + totalDeliveryCharge - appliedCouponDiscount).toFixed(0)}`;
+        };
+        updatePayTotal();
+
+        // Apply Coupon logic
+        const applyBtn = document.getElementById('applyCouponBtn');
+        if (applyBtn) {
+            applyBtn.onclick = async () => {
+                const user = auth.currentUser;
+                if(!user) return;
+                const code = document.getElementById('couponInput').value.trim().toUpperCase();
+                const msgEl = document.getElementById('couponMessage');
+                if (!code) { msgEl.style.display='block'; msgEl.style.color='red'; msgEl.innerText='Enter a code'; return; }
+                
+                showLoading("Applying coupon...");
+                try {
+                    const qSnap = await getDocs(query(collection(db, "coupons"), where("code", "==", code)));
+                    if (qSnap.empty) {
+                        msgEl.style.display='block'; msgEl.style.color='red'; msgEl.innerText='Invalid Coupon Code';
+                    } else {
+                        const coupon = qSnap.docs[0].data();
+                        if (coupon.expiry && new Date(coupon.expiry) < new Date()) {
+                            msgEl.style.display='block'; msgEl.style.color='red'; msgEl.innerText='Coupon Expired';
+                            hideLoading(); return;
+                        }
+                        if (coupon.userEmail && coupon.userEmail !== user.email) {
+                            msgEl.style.display='block'; msgEl.style.color='red'; msgEl.innerText='Coupon not valid for this account';
+                            hideLoading(); return;
+                        }
+
+                        appliedCouponCode = code;
+                        if (coupon.type === 'percentage') {
+                            appliedCouponDiscount = (total + totalDeliveryCharge) * (coupon.value / 100);
+                        } else {
+                            appliedCouponDiscount = coupon.value;
+                        }
+                        msgEl.style.display='block'; msgEl.style.color='green'; msgEl.innerText=`Coupon Applied! You saved ₹${appliedCouponDiscount.toFixed(0)}`;
+                        updatePayTotal();
+                    }
+                } catch(e) {
+                     msgEl.style.display='block'; msgEl.style.color='red'; msgEl.innerText='Error applying coupon';
+                }
+                hideLoading();
+            };
+        }
 
         // V5 Selection Interaction
         const allMethods = document.querySelectorAll('.pay-method-row');
@@ -428,6 +497,7 @@ document.getElementById('finishOrderBtn')?.addEventListener('click', async () =>
         
         let totalAmount = 0;
         checkoutItems.forEach(p => totalAmount += parseFloat(p.price));
+        totalAmount = Math.max(0, totalAmount + totalDeliveryCharge - appliedCouponDiscount);
 
         if (payMethod === 'ONLINE') {
             hideLoading();
@@ -442,6 +512,7 @@ document.getElementById('finishOrderBtn')?.addEventListener('click', async () =>
                 "handler": async function (response) {
                     showLoading("Payment Successful! Processing Order...");
                     await saveOrders(user.uid, userData, `Online (${detailedMethod})`, response.razorpay_payment_id);
+                    triggerCouponSuccessFireworks();
                 },
                 "prefill": {
                     "name": userData.displayName || user.displayName,
@@ -458,6 +529,7 @@ document.getElementById('finishOrderBtn')?.addEventListener('click', async () =>
         } else {
             // Cash on Delivery Logic
             await saveOrders(user.uid, userData, 'COD (Pending)', 'N/A');
+            triggerCouponSuccessFireworks();
         }
     } catch(e) { 
         hideLoading();
@@ -477,6 +549,8 @@ const saveOrders = async (userId, userData, payMethod, paymentId) => {
                 productId: p.id,
                 productTitle: p.title || p.name,
                 productPrice: p.price,
+                couponCode: appliedCouponCode || 'N/A',
+                discountApplied: appliedCouponDiscount || 0,
                 productImage: p.imageUrl || p.img,
                 selectedSize: p.selectedSize || 'N/A',
                 orderDate: new Date().toISOString(),
