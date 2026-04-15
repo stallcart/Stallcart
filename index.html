@@ -13,7 +13,11 @@
     <!-- SEO Meta Tags -->
     <meta name="description" content="Shop the latest fashion trends at StallCart. Exclusive deals on men and women clothing, accessories and more. Best prices and 24-hour cancellation guaranteed.">
     <meta name="keywords" content="StallCart, fashion, online shopping India, men clothing, women fashion, StallCart.in, Manish Kumar Jaiswal, cheap clothes, premium fashion">
-    <meta name="author" content="Manish Kumar Jaiswal">
+<meta name="author" content="Manish Kumar Jaiswal">
+    <meta name="geo.region" content="IN-UP">
+    <meta name="geo.placename" content="Varanasi">
+    <meta name="geo.position" content="25.3176;82.9739">
+    <meta name="ICBM" content="25.3176, 82.9739">
     <link rel="canonical" href="https://stallcart.in/">
     <link rel="icon" href="Lo.png" type="image/png">
     
@@ -45,7 +49,7 @@
     <header class="navbar">
         <div class="nav-content">
             <div class="logo-group" style="display: flex; align-items: center; gap: 8px; cursor: pointer;" onclick="showSection('home')">
-                <img src="Lo.png" alt="StallCart" style="height: 40px; width: auto; object-fit: contain;">
+                <img src="Lo.png" alt="StallCart Logo - Premium Fashion India" style="height: 40px; width: auto; object-fit: contain;">
                 <div class="logo">StallCart</div>
             </div>
             <div class="search-container">
@@ -154,7 +158,7 @@
                 <h3>Price Details</h3>
                 <div class="price-row"><span>Price (<span id="itemQty">0</span> items)</span> <span id="totalMRP">₹0</span></div>
                 <div class="price-row"><span>Discount</span> <span class="green-text" id="totalDiscount">-₹0</span></div>
-                <div class="price-row"><span>Delivery Charges</span> <span class="green-text">FREE</span></div>
+                <div class="price-row"><span>Delivery Charges</span> <span class="green-text" id="cartDeliveryCharge">FREE</span></div>
                 <hr>
                 <div class="price-row final-price"><span>Total Amount</span> <span id="finalCartAmount">₹0</span></div>
                 <button class="place-order-btn" id="cartPlaceOrderBtn">PLACE ORDER</button>
@@ -185,6 +189,16 @@
                     <div class="secure-strip-v5">
                         <i class="fa-solid fa-shield-check"></i>
                         <span>100% SECURE SSL ENCRYPTED TRANSACTION VIA RAZORPAY</span>
+                    </div>
+
+                    <!-- Coupon Code section -->
+                    <div class="coupon-section" style="margin-top:20px; background:#f9fbff; padding:15px; border-radius:8px; border:1px dashed #2874f0;">
+                        <div style="font-weight:600; font-size:14px; margin-bottom:10px; color: #2874f0;"><i class="fa fa-ticket"></i> Apply Coupon Code</div>
+                        <div style="display:flex; gap:10px;">
+                            <input type="text" id="couponInput" placeholder="Enter coupon code" style="flex:1; padding:10px; border:1px solid #ccc; border-radius:4px; outline:none;">
+                            <button id="applyCouponBtn" style="background:#2874f0; color:white; border:none; padding:10px 20px; border-radius:4px; font-weight:600; cursor:pointer;">Apply</button>
+                        </div>
+                        <div id="couponMessage" style="font-size:12px; margin-top:8px; display:none; font-weight: 500;"></div>
                     </div>
 
                     <!-- Available Methods -->
@@ -333,7 +347,7 @@
             <div class="modal-left">
                 <h2 id="modalTitle">Login</h2>
                 <p>Get access to your Orders and Wishlist</p>
-                <img src="logo.png" alt="StallCart" class="auth-img-sidebar">
+                <img src="logo.png" alt="StallCart Logo" class="auth-img-sidebar">
             </div>
             <div class="modal-right">
                 <span class="close" id="closeModal">&times;</span>
@@ -394,7 +408,7 @@
                     </a>
                 </div>
                 <div class="footer-logo-group" style="display: flex; align-items: center; gap: 8px; margin-top: 20px;">
-                    <img src="Lo.png" alt="StallCart" style="height: 45px; width: auto; object-fit: contain;">
+                    <img src="Lo.png" alt="StallCart Logo Footer" style="height: 45px; width: auto; object-fit: contain;">
                     <div class="logo" style="font-size: 24px; color: #fff; background: none; -webkit-text-fill-color: #fff;">StallCart</div>
                 </div>
             </div>
@@ -412,9 +426,17 @@
                 <a href="tel:8004096954"><i class="fa fa-phone"></i> +91 8004096954</a>
                 <a href="https://wa.me/8004096954"><i class="fab fa-whatsapp"></i> +91 8004096954</a>
                 <a href="mailto:stallcart.in@gmail.com"><i class="fa fa-envelope"></i> stallcart.in@gmail.com</a>
+                <a href="https://www.instagram.com/stallcart?igsh=MThxaHBvY2VpbTNybg==" target="_blank" rel="noopener noreferrer" style="display:flex; align-items:center; gap:8px;">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/e/e7/Instagram_logo_2016.svg" alt="Instagram Logo" style="width:20px; height:20px;"> Instagram
+                </a>
                 <p style="color: #878787; font-size: 10px; margin-top: 10px;">Address: Uttar Pradesh, India</p>
             </div>
 
+                <div class="footer-column">
+                <h4>QUICK LINKS</h4>
+                <a href="index.html">Shop</a>
+                <a href="blog.html" style="color: #ffd700; font-weight: bold;">BLOG</a>
+            </div>
             <div class="footer-column">
                 <h4>TRUST & SECURITY</h4>
                 <div class="trust-icons" style="display:flex; flex-direction:column; gap:12px;">
